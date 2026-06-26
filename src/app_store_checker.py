@@ -1,11 +1,10 @@
 ﻿# -*- coding: utf-8 -*-
-"""应用商店查重：检查候选 APP 思路在主流商店是否已有同类，并给出推荐分类。
+"""应用商店查重：检查候选 APP 思路在各主流商店是否已有同类，并给出推荐分类。
 
 数据源策略（全部免费、无需 key）：
-- Apple App Store：官方 iTunes Search API（免费、无 key），最稳，必查。
-- Google Play / 华为 / 小米 / VIVO / OPPO：无官方免费搜索 API，
-  默认用 Google 站内搜索（site:domain query）间接取证，受 ENABLE_GOOGLE_SITE_SEARCH 开关控制，
-  默认关闭（不稳定且慢），关闭时标注「未开启，建议人工复查」。
+- Apple App Store：官方 iTunes Search API，最稳，必查。
+- Google Play：google-play-scraper 库（免费无 key），拿到同类数/分类/评分/下载量。
+- 华为/小米/vivo/oppo：无官方免费 API，抓取各商店搜索页解析结果数，失败回退为"未知"。
 """
 import urllib.request
 import urllib.parse
@@ -13,6 +12,7 @@ import json
 import re
 
 import config
+import cn_store_searcher
 
 UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124 Safari/537.36"
 
@@ -34,8 +34,8 @@ def _build_query(repo):
     return q[:60]
 
 
+# ---------- Apple ----------
 def _apple_search(query):
-    """官方 iTunes Search API。返回 (已有同类数, 示例列表)。"""
     params = urllib.parse.urlencode({
         "term": query, "country": config.SEARCH_COUNTRY,
         "media": "software", "limit": 10,
@@ -43,36 +43,66 @@ def _apple_search(query):
     url = config.APPLE_SEARCH_API + "?" + params
     try:
         data = json.loads(_get(url))
-        results = data.get("results", [])
         items = [{
-            "name": r.get("trackName"),
-            "developer": r.get("artistName"),
-            "genre": r.get("primaryGenreName"),
-            "url": r.get("trackViewUrl"),
+            "name": r.get("trackName"), "developer": r.get("artistName"),
+            "genre": r.get("primaryGenreName"), "url": r.get("trackViewUrl"),
             "price": r.get("formattedPrice"),
-        } for r in results if r.get("trackName")]
+        } for r in data.get("results", []) if r.get("trackName")]
         return len(items), items
     except Exception as e:
-        print("[store] apple 搜索失败: %s" % e)
+        print("[store] apple 失败: %s" % e)
         return 0, []
 
 
-def _google_site_search(site_domain, query):
-    q = "site:%s %s" % (site_domain, query)
-    url = config.GOOGLE_SEARCH_URL + "?" + urllib.parse.urlencode({"q": q, "hl": "zh-CN", "num": 10})
+# ---------- Google Play ----------
+def _google_play_search(query):
+    """用 google-play-scraper 库。失败返回 (0, [])。"""
+    if not getattr(config, "ENABLE_GOOGLE_PLAY", True):
+        return 0, []
     try:
-        html = _get(url)
-        m = re.search(r"约\s*([\d,]+)\s*条结果", html) or re.search(r"id=\"result-stats\">.*?([\d,]+)\s*条", html)
-        count = int(m.group(1).replace(",", "")) if m else len(re.findall(r"<h3", html))
-        titles = re.findall(r"<h3[^>]*>(.*?)</h3>", html)
-        titles = [re.sub(r"<[^>]+>", "", t).strip() for t in titles if t.strip()][:3]
-        return max(count, 1 if titles else 0), titles
+        from google_play_scraper import search as gp_search
+    except ImportError:
+        print("[store] google_play: 未安装 google-play-scraper，跳过")
+        return 0, []
+    try:
+        results = gp_search(query, n_hits=10, lang="zh", country="cn")
+        items = [{
+            "name": r.get("title"),
+            "developer": r.get("developer"),
+            "genre": r.get("genre"),
+            "score": r.get("score"),
+            "installs": r.get("installs"),
+            "url": "https://play.google.com/store/apps/details?id=" + r.get("appId", ""),
+        } for r in results]
+        return len(items), items
     except Exception as e:
-        print("[store] %s 站内搜索失败: %s" % (site_domain, e))
+        print("[store] google_play 失败: %s" % e)
         return 0, []
 
 
-# Apple 真实分类 -> 我们的分类体系归一化
+# ---------- 国内商店搜索（华为/小米/vivo，移植自 SEO 项目逆向成果）----------
+_CN_STORE_FN = {
+    "huawei": cn_store_searcher.huawei_search,
+    "xiaomi": cn_store_searcher.xiaomi_search,
+    "vivo": cn_store_searcher.vivo_search,
+}
+
+
+def _cn_store_search(store_name, query):
+    """调用国内商店搜索。失败返回 (0, [])。"""
+    if not getattr(config, "ENABLE_CN_STORE_SCRAPE", True):
+        return 0, []
+    fn = _CN_STORE_FN.get(store_name)
+    if not fn:
+        return 0, []
+    try:
+        return fn(query)
+    except Exception as e:
+        print("[store] %s 搜索失败: %s" % (store_name, e))
+        return 0, []
+
+
+# ---------- 分类 ----------
 APPLE_GENRE_MAP = {
     "Productivity": "效率", "Utilities": "工具", "Social Networking": "社交",
     "Communication": "通讯", "Education": "教育", "Book": "图书", "News": "新闻",
@@ -82,15 +112,30 @@ APPLE_GENRE_MAP = {
     "Food & Drink": "美食佳饮", "Business": "商务", "Graphics & Design": "图形和设计",
     "Reference": "工具", "Shopping": "购物",
 }
+PLAY_GENRE_KEYWORDS = {
+    "Productivity": "效率", "Tools": "工具", "Social": "社交", "Communication": "通讯",
+    "Education": "教育", "Books": "图书", "News": "新闻", "Lifestyle": "生活",
+    "Health": "健康健美", "Finance": "财务", "Photography": "摄影与录像",
+    "Music": "音乐", "Entertainment": "娱乐", "Medical": "医疗", "Travel": "旅游",
+    "Maps": "导航", "Food": "美食佳饮", "Business": "商务", "Design": "图形和设计",
+    "Shopping": "购物",
+}
 
 
-def _classify(repo, apple_items=None):
-    """优先用 Apple 真实分类（出现次数最多），否则关键词推断。"""
-    if apple_items:
-        genres = [it["genre"] for it in apple_items if it.get("genre")]
-        if genres:
-            top = max(set(genres), key=genres.count)
-            return APPLE_GENRE_MAP.get(top, top)
+def _classify(repo, apple_items=None, play_items=None):
+    """优先用商店真实分类，否则关键词推断。"""
+    genres = []
+    for it in (apple_items or []):
+        if it.get("genre"):
+            genres.append(APPLE_GENRE_MAP.get(it["genre"], it["genre"]))
+    for it in (play_items or []):
+        g = it.get("genre") or ""
+        for k, v in PLAY_GENRE_KEYWORDS.items():
+            if k.lower() in g.lower():
+                genres.append(v)
+                break
+    if genres:
+        return max(set(genres), key=genres.count)
     text = ((repo.get("desc") or "") + " " + " ".join(repo.get("topics") or [])).lower()
     best, best_score = "工具", 0
     for cat, kws in config.CATEGORY_KEYWORD_MAP.items():
@@ -100,13 +145,15 @@ def _classify(repo, apple_items=None):
     return best
 
 
-def _competition_level(total, apple_count):
-    # 以 Apple 为主判断（最可靠），其他商店只作参考
-    if apple_count == 0:
-        return "蓝海（Apple 未发现同类，建议重点验证）"
-    if apple_count <= 3:
+def _competition_level(apple_count, play_count, cn_total):
+    total_real = apple_count + play_count
+    if total_real == 0 and cn_total == 0:
+        return "蓝海（各商店均未发现同类，建议重点验证）"
+    if total_real == 0:
+        return "低竞争（国内有零星同类，海外未见）"
+    if total_real <= 3:
         return "低竞争"
-    if apple_count <= 8:
+    if total_real <= 8:
         return "中等竞争"
     return "红海（同类众多，需差异化）"
 
@@ -114,28 +161,30 @@ def _competition_level(total, apple_count):
 def check(repo):
     query = _build_query(repo)
     apple_count, apple_items = _apple_search(query)
-    category = _classify(repo, apple_items)
-    stores = {"apple": {"count": apple_count, "samples": apple_items}}
+    play_count, play_items = _google_play_search(query)
+    category = _classify(repo, apple_items, play_items)
 
-    if config.ENABLE_GOOGLE_SITE_SEARCH:
-        for store_name, domain in list(config.STORE_SITE_DOMAINS.items()):
-            count, titles = _google_site_search(domain, query)
-            stores[store_name] = {"count": count, "samples": titles}
-    else:
-        for store_name in config.STORE_SITE_DOMAINS:
-            stores[store_name] = {"count": -1, "samples": [], "note": "未开启站内搜索，建议人工复查"}
+    stores = {
+        "apple": {"count": apple_count, "samples": apple_items},
+        "google_play": {"count": play_count, "samples": play_items},
+    }
+    cn_total = 0
+    for sname in config.STORE_SEARCH_URLS:
+        c, items = _cn_store_search(sname, query)
+        stores[sname] = {"count": c, "samples": items}
+        if c > 0:
+            cn_total += c
 
-    total = apple_count + sum(v["count"] for v in stores.values() if v.get("count", 0) > 0)
+    total = apple_count + play_count + cn_total
     return {
         "query": query,
         "category": category,
         "stores": stores,
         "total_similar": total,
-        "competition": _competition_level(total, apple_count),
+        "competition": _competition_level(apple_count, play_count, cn_total),
     }
 
 
 if __name__ == "__main__":
-    r = {"desc": "A habit tracker app", "name": "x/habit", "topics": ["habit", "productivity"]}
     import pprint
-    pprint.pprint(check(r))
+    pprint.pprint(check({"desc": "A habit tracker app", "name": "x/habit", "topics": ["habit"]}))

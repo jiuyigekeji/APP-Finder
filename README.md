@@ -83,10 +83,14 @@ python src/main.py
 
 - **推荐 APP 分类**：优先用 Apple 真实分类（出现最多的 `primaryGenreName`），无结果时按关键词映射推断（映射表见 `src/config.py` 的 `CATEGORY_KEYWORD_MAP`）。
 - **Apple App Store**：用官方 iTunes Search API（免费、无需 key），返回同类数量与示例（名称/开发者/分类/价格）。
-- **Google Play / 华为 / 小米 / VIVO / OPPO**：无官方免费搜索 API，默认标注「未开启，建议人工复查」。
-- **竞争程度**：根据 Apple 同类数量判定（0=蓝海，≤3 低竞争，≤8 中等，>8 红海）。
+- **Google Play**：用 `google-play-scraper` 库（免费无 key），返回同类数/分类/评分/下载量。
+- **华为应用市场**：调用 `web-drcn.hispace.dbankcloud.com` 官方接口（先取 interfaceCode 再搜索），移植自 SEO 项目逆向成果。
+- **vivo 应用商店**：调用 `main.appstore.vivo.com.cn/port/packages` 官方接口（无需认证）。
+- **小米应用商店**：调用 `app.market.xiaomi.com/apm/search`，含 HMAC 签名算法（SALT="good luck!"，自定义 base64，字段重排）。海外/高频 IP 可能被风控限流，失败回退为「未发现同类」。
+- **OPPO**：暂不搜索。
+- **竞争程度**：综合 Apple + Google Play + 国内商店同类数判定（0=蓝海，≤3 低竞争，≤8 中等，>8 红海）。
 
-开启其他商店的站内搜索（不稳定且慢，谨慎使用）：在 Actions Secrets 设 `ENABLE_GOOGLE_SITE_SEARCH=true`。
+国内商店搜索逻辑移植自 `C:\Users\lpylinan\Documents\SEO\aso-toolkit` 项目的逆向成果（华为/vivo/小米）。
 
 ## 调优
 

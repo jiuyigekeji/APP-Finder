@@ -21,6 +21,9 @@ jobs:
         with:
           python-version: "3.11"
 
+      - name: Install dependencies
+        run: pip install -r src/requirements.txt
+
       - name: Run finder
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

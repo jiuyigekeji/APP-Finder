@@ -62,7 +62,6 @@ STORE_SITE_DOMAINS = {
     "huawei": "appgallery.huawei.com",
     "xiaomi": "app.mi.com",
     "vivo": "appstore.vivo.com.cn",
-    "oppo": "app.oppomobile.com",
 }
 GOOGLE_SEARCH_URL = "https://www.google.com/search"
 STORE_CHECK_TIMEOUT = 10
@@ -102,3 +101,29 @@ CATEGORY_KEYWORD_MAP = {
 }
 # 商店分类名对应表（Apple -> Google -> 国内商店通用名近似）
 CATEGORY_DISPLAY = "推荐分类"
+
+# ===== 关键词翻译 =====
+# 优先级：AI API（若启用） -> LibreTranslate 公共实例 -> 原文不翻译
+LIBRETRANSLATE_URL = "https://libretranslate.com/translate"
+LIBRETRANSLATE_TIMEOUT = 8
+
+# ===== Google Play 查重 =====
+# 使用 google-play-scraper（免费无 key）。仓库内核心文件较少时也可直连。
+ENABLE_GOOGLE_PLAY = True
+GOOGLE_PLAY_TIMEOUT = 12
+
+# ===== 国内商店搜索页抓取 =====
+# 各商店搜索 URL 模板，{q} 为 url 编码后的查询词
+STORE_SEARCH_URLS = {
+    "huawei": "https://so.appgallery.huawei.com/search/{q}",
+    "xiaomi": "https://app.mi.com/search/all?keywords={q}",
+    "vivo": "https://developer.vivo.com.cn/middleware/searchApp/{q}",
+}
+STORE_SCRAPE_TIMEOUT = 10
+ENABLE_CN_STORE_SCRAPE = True  # 国内商店抓取开关，失败回退为"未知"
+
+# ===== AI 代码分析 =====
+# 拉取仓库核心源码文件数与大小上限
+AI_REPO_FILES_MAX = 6
+AI_REPO_FILE_MAX_CHARS = 4000
+AI_CODE_ANALYZE_TOPN = 5  # 对前 N 个候选做 AI 代码分析

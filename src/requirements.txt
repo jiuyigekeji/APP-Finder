@@ -1,2 +1,1 @@
-# 仅用 Python 标准库，无需安装任何依赖。
-# 在 GitHub Actions 的 ubuntu runner 上 Python 3.11 自带即可运行。
+﻿google-play-scraper>=1.2.7
