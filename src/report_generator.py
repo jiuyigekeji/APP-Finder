@@ -94,7 +94,10 @@ def generate(date_str, translated_grouped, repos, ai_results=None, demands=None)
         lines.append("### %d. %s （评分 %d%s）\n" % (idx, r["name"], r["score"], gap))
         lines.append("- 仓库: %s" % r["url"])
         src_kw = r.get("search_keyword", "")
-        if src_kw:
+        src_origin = r.get("search_origin", "")
+        if src_origin and src_origin != src_kw:
+            lines.append("- 🔑 来源需求: %s → GitHub 搜索: %s" % (src_origin, src_kw))
+        elif src_kw:
             lines.append("- 🔑 来源关键词: %s" % src_kw)
         lines.append("- 描述: %s" % (r["desc"] or "(无)"))
         lines.append("- Star: %d | 语言: %s | Topics: %s" % (r["stars"], r["language"] or "未知", ", ".join(r["topics"]) or "无"))

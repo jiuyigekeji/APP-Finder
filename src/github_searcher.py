@@ -43,9 +43,18 @@ def _pick(repo):
 
 
 def search(keywords):
+    """搜索 GitHub。
+
+    keywords 可为 [query] 或 [(query, origin)]。
+    origin 是该 query 的来源（如原始中文需求词），用于报告追溯。
+    """
     seen = set()
     results = []
-    for kw in keywords:
+    for entry in keywords:
+        if isinstance(entry, tuple) and len(entry) == 2:
+            kw, origin = entry
+        else:
+            kw, origin = entry, entry
         try:
             data = _get(_query(kw))
         except Exception as e:
@@ -57,7 +66,8 @@ def search(keywords):
                 continue
             seen.add(full)
             item = _pick(repo)
-            item["search_keyword"] = kw  # 记录是哪个关键词搜到的
+            item["search_keyword"] = kw       # 实际搜索词（英文技术词）
+            item["search_origin"] = origin    # 来源需求词（中文需求/热搜词）
             results.append(item)
             if len(results) >= config.MAX_REPOS_TO_ANALYZE:
                 return results

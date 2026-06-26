@@ -13,6 +13,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import config
 import demand_miner
+import query_translator
 import keyword_collector
 import keyword_translator
 import github_searcher
@@ -44,10 +45,13 @@ def run():
     }
     print("[main] 翻译完成")
 
-    # 3. GitHub 搜索：用需求词 + 热搜词合并搜索
-    # 需求词太长（如「发票怎么开」）需提取核心词用于 GitHub 搜索
-    search_words = _extract_search_terms(demand_words) + keyword_collector.all_keywords(hot)
-    repos = github_searcher.search(search_words)
+    # 3. GitHub 搜索：需求词经 query_translator 映射为英文技术词
+    #    （github_searcher 会记录每个仓库命中的英文词，报告里追溯到原始需求词）
+    demand_terms = query_translator.build_search_terms(demand_words)  # [(英文词, 原始需求词)]
+    hot_terms = keyword_collector.all_keywords(hot)
+    # search 接受 [(query, origin)] 或 [query]，origin 用于追溯
+    search_input = [(gq, origin) for gq, origin in demand_terms] + [(w, w) for w in hot_terms]
+    repos = github_searcher.search(search_input)
     if not repos:
         print("[main] 未获取到仓库，终止")
         return False
@@ -74,20 +78,6 @@ def run():
         f.write(report)
     print("[main] 报告已写入: %s" % out_path)
     return True
-
-
-def _extract_search_terms(demand_words):
-    """从需求词提取适合 GitHub 搜索的核心词。
-    需求词多为「XX软件/XX工具/XX怎么XX」，提取主语部分。"""
-    import re
-    out = []
-    for w in demand_words:
-        # 去掉疑问/动作后缀，保留主语
-        w = re.sub(r"(怎么|如何|为什么|怎么办|软件|工具|app|应用|下载|的|了|呢|吗).*$", "", w, flags=re.IGNORECASE)
-        w = w.strip()
-        if len(w) >= 2:
-            out.append(w)
-    return out
 
 
 if __name__ == "__main__":
