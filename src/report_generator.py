@@ -1,4 +1,11 @@
-"""生成每日 Markdown 报告（中文）。"""
+﻿# -*- coding: utf-8 -*-
+"""生成每日 Markdown 报告（中文）。
+
+报告结构：
+一、用户真实需求（百度联想词扩展，主信号）
+二、热搜趋势（辅助参考）
+三、可做的 APP 候选（含供给缺口分析）
+"""
 from datetime import datetime, timezone, timedelta
 
 import config
@@ -19,17 +26,46 @@ def _kw_line(i, kw, zh):
     return "%d. %s" % (i, kw)
 
 
-def generate(date_str, translated_grouped, repos, ai_results=None):
+def _supply_gap_flag(store_check):
+    """供给缺口标记：商店同类少 = 洼地机会。"""
+    if not store_check:
+        return ""
+    total = store_check.get("total_similar", 0)
+    if total <= config.LOW_SUPPLY_THRESHOLD:
+        return " 🟢供给缺口"
+    return ""
+
+
+def generate(date_str, translated_grouped, repos, ai_results=None, demands=None):
     ai_results = ai_results or {}
+    demands = demands or []
     tz = timezone(timedelta(hours=8))
     lines = []
-    lines.append("# APP 发现日报 - %s\n" % date_str)
+    lines.append("# APP 机会发现日报 - %s\n" % date_str)
     lines.append("> 自动生成时间: %s" % datetime.now(tz).strftime("%Y-%m-%d %H:%M CST"))
-    lines.append("> 数据来源: 百度热搜 / Google Trends / GitHub Search API / 各应用商店\n")
+    lines.append("> 需求信号: 百度联想词(用户持续搜索) / 热搜(趋势参考)")
+    lines.append("> 供给信号: Apple/Google Play/华为/小米/vivo 商店查重\n")
 
-    lines.append("## 一、今日热点关键词\n")
-    baidu = translated_grouped.get("baidu", [])
-    google = translated_grouped.get("google", [])
+    # ===== 一、用户真实需求 =====
+    lines.append("## 一、用户真实需求（百度联想词扩展）\n")
+    lines.append("> 以下为用户持续搜索的「解决方案型」需求，非突发事件，适合 APP 长周期开发。\n")
+    demand_translated = translated_grouped.get("demands", [])
+    if demand_translated:
+        for i, (kw, zh) in enumerate(demand_translated, 1):
+            src = demands[i - 1][1] if i - 1 < len(demands) else ""
+            line = _kw_line(i, kw, zh)
+            if src:
+                line += "  _← %s_" % src
+            lines.append(line)
+        lines.append("")
+    else:
+        lines.append("（未挖掘到需求词）\n")
+
+    # ===== 二、热搜趋势（辅助）=====
+    lines.append("## 二、热搜趋势（辅助参考）\n")
+    hot = translated_grouped.get("hot", {})
+    baidu = hot.get("baidu", [])
+    google = hot.get("google", [])
     if baidu:
         lines.append("**百度热搜**\n")
         for i, (kw, zh) in enumerate(baidu, 1):
@@ -41,15 +77,21 @@ def generate(date_str, translated_grouped, repos, ai_results=None):
             lines.append(_kw_line(i, kw, zh))
         lines.append("")
 
+    # ===== 三、可做的 APP 候选 =====
     candidates = [r for r in repos if r["score"] >= config.MIN_REPORT_SCORE]
     if not candidates:
-        lines.append("## 二、可做的 APP 候选\n")
-        lines.append("今日未发现满足阈值的候选。可调整 `config.py` 中的 `MIN_REPORT_SCORE` 或扩展种子词。\n")
+        lines.append("## 三、可做的 APP 候选\n")
+        lines.append("今日未发现满足阈值的候选。可调整 `config.py` 中的 `MIN_REPORT_SCORE`。\n")
         return "\n".join(lines)
 
-    lines.append("## 二、可做的 APP 候选（按适配度评分排序）\n")
+    # 优先展示供给缺口的候选
+    candidates.sort(key=lambda r: (
+        0 if r.get("store_check", {}).get("total_similar", 99) <= config.LOW_SUPPLY_THRESHOLD else 1,
+        -r["score"]))
+    lines.append("## 三、可做的 APP 候选（🟢供给缺口优先，按评分排序）\n")
     for idx, r in enumerate(candidates, 1):
-        lines.append("### %d. %s （评分 %d）\n" % (idx, r["name"], r["score"]))
+        gap = _supply_gap_flag(r.get("store_check"))
+        lines.append("### %d. %s （评分 %d%s）\n" % (idx, r["name"], r["score"], gap))
         lines.append("- 仓库: %s" % r["url"])
         lines.append("- 描述: %s" % (r["desc"] or "(无)"))
         lines.append("- Star: %d | 语言: %s | Topics: %s" % (r["stars"], r["language"] or "未知", ", ".join(r["topics"]) or "无"))
@@ -57,7 +99,6 @@ def generate(date_str, translated_grouped, repos, ai_results=None):
             lines.append("- 主页: %s" % r["homepage"])
         lines.append("")
 
-        # 推荐分类 + 应用商店查重
         sc = r.get("store_check")
         if sc:
             lines.append("**推荐 APP 分类**: %s" % sc["category"])
@@ -83,7 +124,6 @@ def generate(date_str, translated_grouped, repos, ai_results=None):
                     lines.append("- %s: 未发现同类" % label)
             lines.append("")
 
-        # 解决的问题 / 痛点
         ai = ai_results.get(r["name"])
         lines.append("**解决了什么问题 / 痛点**")
         if ai:
@@ -91,7 +131,7 @@ def generate(date_str, translated_grouped, repos, ai_results=None):
             lines.append("- 解决的问题: %s" % ai.get("problem", ""))
             lines.append("- 用户痛点: %s" % ai.get("pain_point", ""))
         else:
-            lines.append("- _（未启用 AI 代码分析，以下为启发式抽取，建议开启 AI 或人工复核 README）_")
+            lines.append("- _（未启用 AI 代码分析，以下为启发式抽取）_")
             for p in r["pain_points"]:
                 lines.append("- %s" % p)
             if not r["pain_points"]:
@@ -114,13 +154,13 @@ def generate(date_str, translated_grouped, repos, ai_results=None):
         lines.append("- 先做 MVP：聚焦 1 个核心场景，验证用户付费意愿\n")
         lines.append("---\n")
 
-    lines.append("## 三、说明\n")
-    lines.append("- 评分模型见 `src/config.py`，可调权重与阈值。")
-    lines.append("- 关键词翻译优先用 AI API，回退 LibreTranslate，最终回退原文。")
-    lines.append("- 商店查重：Apple 走官方 API、Google Play 走 scraper 库、国内商店抓取搜索页，失败回退为「未发现同类」。")
-    lines.append("- 痛点分析：启用 AI 时会拉取仓库核心源码做深度分析；未启用时为启发式抽取。\n")
+    lines.append("## 四、说明\n")
+    lines.append("- 需求信号来自百度联想词（用户持续搜索的解决方案），区别于热搜突发事件。")
+    lines.append("- 🟢供给缺口 = 全平台同类 APP ≤ %d 个，是值得优先验证的洼地。" % config.LOW_SUPPLY_THRESHOLD)
+    lines.append("- 候选来自 GitHub 近期活跃且有 star 验证的项目，已做商店查重评估竞争。")
+    lines.append("- 启用 AI（`ENABLE_AI_ANALYSIS`）可对仓库源码做深度痛点分析。\n")
     return "\n".join(lines)
 
 
 if __name__ == "__main__":
-    print(generate("2026-06-26", [("LLM", "大语言模型")], []))
+    print(generate("2026-06-27", {"demands": [("翻译软件", "翻译软件")], "hot": {"baidu": [], "google": []}}, []))
