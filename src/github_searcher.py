@@ -56,7 +56,9 @@ def search(keywords):
             if full in seen:
                 continue
             seen.add(full)
-            results.append(_pick(repo))
+            item = _pick(repo)
+            item["search_keyword"] = kw  # 记录是哪个关键词搜到的
+            results.append(item)
             if len(results) >= config.MAX_REPOS_TO_ANALYZE:
                 return results
         if not config.GITHUB_TOKEN and len(results) >= config.PER_KEYWORD_REPOS * 3:

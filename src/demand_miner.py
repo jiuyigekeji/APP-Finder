@@ -39,10 +39,16 @@ def _is_solution_query(w):
     """判断是否「找解决方案」型需求（而非泛词/导航词/事件）。
 
     特征：含疑问词/动作词/怎么/如何/为什么/工具/软件/方法/下载等。
+    同时排除红海品类（记账/计算器等已饱和市场）。
     """
     w = str(w)
     if not (config.DEMAND_MIN_LEN <= len(w) <= config.DEMAND_MAX_LEN):
         return False
+    low = w.lower()
+    # 红海品类排除
+    for kw in config.RED_OCEAN_KEYWORDS:
+        if kw in low:
+            return False
     # 疑问/求助/工具型关键词
     solution_cues = [
         "怎么", "如何", "为什么", "怎么办", "原理", "方法", "技巧",

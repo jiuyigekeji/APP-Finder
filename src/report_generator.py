@@ -1,4 +1,4 @@
-﻿# -*- coding: utf-8 -*-
+# -*- coding: utf-8 -*-
 """生成每日 Markdown 报告（中文）。
 
 报告结构：
@@ -93,6 +93,9 @@ def generate(date_str, translated_grouped, repos, ai_results=None, demands=None)
         gap = _supply_gap_flag(r.get("store_check"))
         lines.append("### %d. %s （评分 %d%s）\n" % (idx, r["name"], r["score"], gap))
         lines.append("- 仓库: %s" % r["url"])
+        src_kw = r.get("search_keyword", "")
+        if src_kw:
+            lines.append("- 🔑 来源关键词: %s" % src_kw)
         lines.append("- 描述: %s" % (r["desc"] or "(无)"))
         lines.append("- Star: %d | 语言: %s | Topics: %s" % (r["stars"], r["language"] or "未知", ", ".join(r["topics"]) or "无"))
         if r["homepage"]:
