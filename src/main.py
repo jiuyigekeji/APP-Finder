@@ -1,4 +1,5 @@
-﻿"""主入口：采集 -> 翻译 -> 搜索 -> 分析 -> 商店查重 -> AI 代码分析 -> 生成报告 -> 写盘。"""
+﻿# -*- coding: utf-8 -*-
+"""主入口：采集 -> 翻译 -> 搜索 -> 分析 -> 商店查重 -> AI 代码分析 -> 生成报告 -> 写盘。"""
 import os
 import sys
 from datetime import datetime, timezone, timedelta
@@ -22,18 +23,22 @@ def run():
     date_str = datetime.now(tz).strftime("%Y-%m-%d")
     print("=== APP-Finder 运行 %s ===" % date_str)
 
-    keywords = keyword_collector.collect()
-    # 关键词翻译：英文词追加中文翻译
-    translated = keyword_translator.translate_keywords(keywords)
+    grouped = keyword_collector.collect()
+    # 分别翻译两个来源
+    translated = {
+        "baidu": keyword_translator.translate_keywords(grouped["baidu"]),
+        "google": keyword_translator.translate_keywords(grouped["google"]),
+    }
     print("[main] 关键词翻译完成")
 
-    repos = github_searcher.search(keywords)
+    # GitHub 搜索用合并去重词
+    all_kw = keyword_collector.all_keywords(grouped)
+    repos = github_searcher.search(all_kw)
     if not repos:
         print("[main] 未获取到仓库，终止")
         return False
     analyzed = repo_analyzer.analyze(repos)
 
-    # AI 代码深度分析（仅对前 N 个候选）
     ai_results = {}
     if config.ENABLE_AI_ANALYSIS:
         topn = [r for r in analyzed if r["score"] >= config.MIN_REPORT_SCORE][:config.AI_CODE_ANALYZE_TOPN]

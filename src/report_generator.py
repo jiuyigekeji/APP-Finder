@@ -1,4 +1,4 @@
-﻿"""生成每日 Markdown 报告（中文）。"""
+"""生成每日 Markdown 报告（中文）。"""
 from datetime import datetime, timezone, timedelta
 
 import config
@@ -13,7 +13,13 @@ STORE_NAMES_CN = {
 STORE_ORDER = ["apple", "google_play", "huawei", "xiaomi", "vivo"]
 
 
-def generate(date_str, translated_keywords, repos, ai_results=None):
+def _kw_line(i, kw, zh):
+    if zh and zh.lower() != kw.lower():
+        return "%d. %s（%s）" % (i, kw, zh)
+    return "%d. %s" % (i, kw)
+
+
+def generate(date_str, translated_grouped, repos, ai_results=None):
     ai_results = ai_results or {}
     tz = timezone(timedelta(hours=8))
     lines = []
@@ -22,12 +28,18 @@ def generate(date_str, translated_keywords, repos, ai_results=None):
     lines.append("> 数据来源: 百度热搜 / Google Trends / GitHub Search API / 各应用商店\n")
 
     lines.append("## 一、今日热点关键词\n")
-    for i, (kw, zh) in enumerate(translated_keywords, 1):
-        if zh and zh.lower() != kw.lower():
-            lines.append("%d. %s（%s）" % (i, kw, zh))
-        else:
-            lines.append("%d. %s" % (i, kw))
-    lines.append("")
+    baidu = translated_grouped.get("baidu", [])
+    google = translated_grouped.get("google", [])
+    if baidu:
+        lines.append("**百度热搜**\n")
+        for i, (kw, zh) in enumerate(baidu, 1):
+            lines.append(_kw_line(i, kw, zh))
+        lines.append("")
+    if google:
+        lines.append("**Google Trends**\n")
+        for i, (kw, zh) in enumerate(google, 1):
+            lines.append(_kw_line(i, kw, zh))
+        lines.append("")
 
     candidates = [r for r in repos if r["score"] >= config.MIN_REPORT_SCORE]
     if not candidates:

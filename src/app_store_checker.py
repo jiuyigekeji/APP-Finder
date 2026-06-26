@@ -66,14 +66,19 @@ def _google_play_search(query):
         return 0, []
     try:
         results = gp_search(query, n_hits=10, lang="zh", country="cn")
-        items = [{
-            "name": r.get("title"),
-            "developer": r.get("developer"),
-            "genre": r.get("genre"),
-            "score": r.get("score"),
-            "installs": r.get("installs"),
-            "url": "https://play.google.com/store/apps/details?id=" + r.get("appId", ""),
-        } for r in results]
+        items = []
+        for r in results:
+            if not r or not isinstance(r, dict):
+                continue
+            app_id = r.get("appId") or ""
+            items.append({
+                "name": r.get("title"),
+                "developer": r.get("developer"),
+                "genre": r.get("genre"),
+                "score": r.get("score"),
+                "installs": r.get("installs"),
+                "url": "https://play.google.com/store/apps/details?id=" + app_id,
+            })
         return len(items), items
     except Exception as e:
         print("[store] google_play 失败: %s" % e)

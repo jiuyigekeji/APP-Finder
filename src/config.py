@@ -129,3 +129,23 @@ ENABLE_CN_STORE_SCRAPE = True  # 国内商店抓取开关，失败回退为"未�
 AI_REPO_FILES_MAX = 6
 AI_REPO_FILE_MAX_CHARS = 4000
 AI_CODE_ANALYZE_TOPN = 5  # 对前 N 个候选做 AI 代码分析
+
+# ===== 关键词预筛（GitHub 搜索前过滤，节省配额、提升候选质量）=====
+# 命中以下正则的词跳过 GitHub 搜索（多为纯人名/赛事/娱乐，GitHub 无对应仓库）
+KEYWORD_SKIP_PATTERNS = [
+    r"\s+vs\.?\s+",        # 赛事对阵: "senegal vs iraq", "挪威vs法国"
+    r"vs\.?\s+\S+",
+    r"获.*奖",              # 获奖新闻: "杨紫获白玉兰奖最佳女主"
+    r"最佳(男|女)",         # 最佳男主/女主
+    r"出生|逝世|去世|身亡",  # 人物生死
+    r"结婚|离婚|出轨|分手",  # 娱乐八卦
+    r"预告|官宣|定档|开播",  # 影视宣发
+    r"^[A-Z][a-z]+ [A-Z][a-z]+$",  # 纯英文人名: "Tom Dundon"
+    r"cricket|football|soccer|nba|world cup",  # 体育
+]
+# 种子科技词：当有效词不足时，补充这些词保证候选数量
+TECH_SEED_KEYWORDS = [
+    "AI agent", "LLM", "RAG", "chatbot", "TTS", "OCR",
+    "笔记", "记账", "番茄钟", "习惯打卡", "冥想", "背单词",
+    "语音转文字", "图像生成", "实时翻译", "电子书", "播客",
+]
