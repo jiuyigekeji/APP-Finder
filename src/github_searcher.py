@@ -8,7 +8,7 @@ import config
 
 
 def _headers():
-    h = {"Accept": "application/vnd.github+json", "User-Agent": "AndroidAppFinder/1.0"}
+    h = {"Accept": "application/vnd.github+json", "User-Agent": "AppFinder/1.0"}
     if config.GITHUB_TOKEN:
         h["Authorization"] = "Bearer " + config.GITHUB_TOKEN
     return h

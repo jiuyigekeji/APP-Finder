@@ -19,7 +19,7 @@ REPORTS_DIR = os.path.join(BASE, "reports")
 def run():
     tz = timezone(timedelta(hours=8))
     date_str = datetime.now(tz).strftime("%Y-%m-%d")
-    print("=== Android APP Finder 运行 %s ===" % date_str)
+    print("=== APP-Finder 运行 %s ===" % date_str)
 
     keywords = keyword_collector.collect()
     repos = github_searcher.search(keywords)

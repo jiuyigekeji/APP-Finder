@@ -8,7 +8,7 @@ import config
 
 
 def _get(url, headers=None, timeout=10):
-    req = urllib.request.Request(url, headers=headers or {"User-Agent": "Mozilla/5.0 (AndroidAppFinder/1.0)"})
+    req = urllib.request.Request(url, headers=headers or {"User-Agent": "Mozilla/5.0 (AppFinder/1.0)"})
     with urllib.request.urlopen(req, timeout=timeout) as resp:
         return resp.read().decode("utf-8", errors="ignore")
 

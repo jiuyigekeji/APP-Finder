@@ -8,7 +8,7 @@ def generate(date_str, keywords, repos, ai_results=None):
     ai_results = ai_results or {}
     tz = timezone(timedelta(hours=8))
     lines = []
-    lines.append("# Android APP 发现日报 - %s\n" % date_str)
+    lines.append("# APP 发现日报 - %s\n" % date_str)
     lines.append("> 自动生成时间: %s\n" % datetime.now(tz).strftime("%Y-%m-%d %H:%M CST"))
     lines.append("> 数据来源: 百度热搜 / Google Trends / GitHub Search API\n")
 

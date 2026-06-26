@@ -1,4 +1,4 @@
-name: Android APP Finder Daily
+name: APP Finder Daily
 
 on:
   schedule:

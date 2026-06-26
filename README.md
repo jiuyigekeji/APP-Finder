@@ -1,4 +1,4 @@
-# Android-APP-Finder
+# APP-Finder
 
 每天自动从热点关键词出发，在 GitHub 上发现有 star 验证、近期活跃、且适合做成 APP / 小程序的工程项目，并产出一份包含「痛点 / 解决的问题 / 为什么适合做 APP / 实现方案」的 Markdown 报告。
 
