@@ -5,6 +5,9 @@
 - 华为：web-drcn.hispace.dbankcloud.com，先取 interfaceCode(JWT) 再调 /uowap/index。
 - vivo：main.appstore.vivo.com.cn/port/packages，POST 表单，无需认证。
 - 小米：app.market.xiaomi.com/apm/search，HMAC 签名（SALT="good luck!"，自定义 base64，字段重排）。
+  算法/参数/UA 与 SEO 项目的 Cloudflare Worker 版（xiaomiSign.js）完全对齐，已用固定 nonce
+  验证签名输出一致。小米服务端有 IP 维度风控（返回 -101 "接口刷量/检测到违规操作"），
+  本地高频 IP 可能被临时标记；Cloudflare/GitHub Actions 等海外低频出口通常可正常返回。
 - OPPO：暂不搜索。
 
 全部用 urllib 实现，无需第三方依赖。失败返回 (0, [])，不中断主流程。
@@ -138,6 +141,7 @@ def vivo_search(keyword, max_results=10):
 # ===================== 小米 =====================
 _MI_BASE = "https://app.market.xiaomi.com"
 _MI_SALT = "good luck!"
+_MI_UA = "Dalvik/2.1.0 (Linux; U; Android 9; MI 6 MIUI/V10)"
 _MI_B64_STD = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
 _MI_B64_CUSTOM = "leDTKhmg4MafVFp73x6djvLiHn2G9XPruARBwS0q1OzNJt8WobZsQcYyEICk5U-_"
 _MI_B64_TRANS = str.maketrans(_MI_B64_STD, _MI_B64_CUSTOM)
@@ -148,18 +152,32 @@ _MI_SIG_KEYS = {
     "native", "renderType", "bottomTab", "pageTag", "type", "stamp", "sid",
 }
 _MI_DEVICE = {
-    "co": "CN", "la": "zh", "lo": "CN", "model": "MI 6", "device": "sagit",
-    "deviceType": "0", "os": "9.9.3", "sdk": "28", "androidVersion": "9",
-    "resolution": "1080*1920", "densityDpi": "440", "densityScaleFactor": "3.0",
-    "marketVersion": "40007430", "miuiBigVersionCode": "8",
-    "miuiBigVersionName": "V10-dev", "clientConfigVersion": "447",
-    "pageConfigVersion": "18430101", "webResVersion": "3193",
-    "network": "wifi", "carrier": "unknown", "cpuArchitecture": "arm64-v8a,armeabi-v7a,armeabi",
+    "androidVersion": "9", "childMode": "0", "clientConfigVersion": "447", "co": "CN",
+    "cpuArchitecture": "arm64-v8a,armeabi-v7a,armeabi",
+    "dctx": "gZ4KjDl7RwTkS1wuk500LP5KdCEfpAS6hEC-aaOuquYnqs0FCnqx1oW3Y98uixceZAJZFzAoCOi6a3bbQ5gZcw",
+    "debugMode": "false", "densityDpi": "440", "densityScaleFactor": "3.0", "device": "sagit",
+    "deviceType": "0", "downloadRestriction": "1", "downloadRestrictionMode": "0",
+    "hybridFrameworkVersion": "11060601", "installDay": "1644",
+    "instance_id": "5a4ea42e-b9b0-42a2-bafd-f88ef3848767", "isMiuiLite": "false",
+    "isSupportIsland": "false", "isSupportMessageBox": "false", "isSupportQuickGameInstall": "false",
+    "isSupportUninstall": "false", "la": "zh", "launchDay": "1643", "lo": "CN",
+    "marketVersion": "40007430", "minorsMode": "false", "miuiBigVersionCode": "8",
+    "miuiBigVersionName": "V10-dev", "model": "MI 6", "needBlockWelfare": "false",
+    "network": "wifi", "newUser": "false", "oaId": "5f4642ca0400e52d", "os": "9.9.3",
+    "pageConfigVersion": "18430101", "privacyCompliance": "true", "rankTypeV2": "true",
+    "resolution": "1080*1920", "ro": "unknown", "sdk": "28",
+    "session_id": "5f4642ca0400e52d1781628160936", "supportAgent": "false", "supportBundle": "1",
+    "supportDownloaderUpdate": "0", "supportOperateIcon": "false", "supportPatchVer": "0,1,2,3",
+    "supportSmallApk": "true", "supportedIslandVersion": "1",
+    "useExpId": "2023001,2311551,2398789,2398846,2302630,2075312,2378691,2329826,2333160,1411227,1996493,2368587,1700402",
+    "webResVersion": "3193",
 }
 
 
 def _mi_nonce():
-    ts = str(int(time.time() * 1000))
+    ts = int(time.time() * 1000)
+    if ts % 4 == 0:
+        ts += 1
     return "%s_%s" % (ts, random.randint(100, 999))
 
 
@@ -192,11 +210,17 @@ def _mi_sign(base_url, params):
 def xiaomi_search(keyword, max_results=10):
     params = dict(_MI_DEVICE)
     params.update({
-        "keyword": keyword, "page": "0", "flag": "2", "ref": "input",
-        "refs": "input-searchResult", "pageRef": "android",
-        "sourcePackage": "android", "searchFrom": "input",
-        "responseType": "1", "native": "1", "renderType": "1",
-        "bottomTab": "true", "activedTimeInterval": str(int(time.time() * 1000)),
+        "bottomTab": "true", "flag": "2", "ref": "input", "keyword": keyword,
+        "pageRef": "android", "sourcePackage": "android", "ad": "0",
+        "refs": "input-searchResult", "page": "0", "responseType": "1",
+        "native": "1", "renderType": "1", "searchFrom": "input", "isNewUI": "true",
+        "feReload": "false", "originalPageRef": "android", "recentSearchHey": keyword,
+        "supportSlide": "1", "previousFromRef": "searchSuggest", "minacompatible": "1",
+        "showGoogleAppsType": "2", "isSupportCreative": "true", "isDarkMode": "false",
+        "fromExternal": "false", "isEncrypt": "1", "voiceAssistVersion": "304010003",
+        "suggestV": "1", "minaPlatformVersion": "11060601", "gameCenterVersionCode": "135100100",
+        "activedTimeInterval": str(int(time.time() * 1000)), "signalType": "wifi",
+        "signalLevel": "-1", "rxBytesPreSecond": "96",
     })
     try:
         sig, nonce = _mi_sign(_MI_BASE + "/apm/search", params)
@@ -204,8 +228,8 @@ def xiaomi_search(keyword, max_results=10):
         params["_s"] = sig
         params["_v"] = "1"
         url = _MI_BASE + "/apm/search?" + urllib.parse.urlencode(params)
-        data = json.loads(_get(url, headers={"User-Agent": UA_DALVIK, "Accept": "application/json",
-                                             "Accept-Encoding": "gzip"}, timeout=15).decode("utf-8", errors="ignore"))
+        data = json.loads(_get(url, headers={"User-Agent": _MI_UA, "Accept": "application/json",
+                                             "Accept-Encoding": "gzip", "Connection": "keep-alive"}, timeout=15).decode("utf-8", errors="ignore"))
     except Exception as e:
         print("[store] xiaomi 搜索失败: %s" % e)
         return 0, []
