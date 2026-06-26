@@ -1,0 +1,42 @@
+name: Android APP Finder Daily
+
+on:
+  schedule:
+    # 每天 UTC 01:00 = 北京时间 09:00
+    - cron: "0 1 * * *"
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Run finder
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ENABLE_AI_ANALYSIS: ${{ secrets.ENABLE_AI_ANALYSIS }}
+          AI_API_KEY: ${{ secrets.AI_API_KEY }}
+          AI_MODEL: ${{ secrets.AI_MODEL }}
+        run: python src/main.py
+
+      - name: Commit report
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add reports/ || true
+          if git diff --cached --quiet; then
+            echo "no new report to commit"
+          else
+            git commit -m "chore: daily app-finder report $(date -u +%Y-%m-%d)"
+            git push
+          fi

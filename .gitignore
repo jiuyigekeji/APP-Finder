@@ -1,0 +1,7 @@
+﻿__pycache__/
+*.pyc
+_*.py
+_tmp*
+# 保留 reports/.gitkeep，但忽略生成的报告（按需调整）
+# 如果想让报告也入库，删掉下面这行
+# reports/*.md
