@@ -17,9 +17,23 @@ def from_baidu():
     try:
         text = _get(config.BAIDU_HOT_URL)
         data = json.loads(text)
-        items = data.get("data", {}).get("cards", [{}])[0].get("content", [])
-        return [it.get("word") or it.get("query") for it in items if it.get("word") or it.get("query")]
-    except Exception:
+        cards = data.get("data", {}).get("cards", [])
+        words = []
+        for card in cards:
+            content = card.get("content", [])
+            for it in content:
+                # pc 端: it 直接是 {word/query/...}
+                w = it.get("word") or it.get("query")
+                if w:
+                    words.append(w)
+                # wise 端: content 可能再嵌套 content
+                for sub in it.get("content", []) if isinstance(it.get("content"), list) else []:
+                    sw = sub.get("word") or sub.get("query") or sub.get("name")
+                    if sw:
+                        words.append(sw)
+        return words
+    except Exception as e:
+        print("[keywords] 百度热搜失败: %s" % e)
         return []
 
 

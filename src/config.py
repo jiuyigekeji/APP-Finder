@@ -105,6 +105,8 @@ CATEGORY_DISPLAY = "推荐分类"
 # ===== 关键词翻译 =====
 # 优先级：AI API（若启用） -> LibreTranslate 公共实例 -> 原文不翻译
 LIBRETRANSLATE_URL = "https://libretranslate.com/translate"
+# Google 翻译非官方端点（免费无 key，稳定），作为主翻译源
+GOOGLE_TRANSLATE_URL = "https://translate.googleapis.com/translate_a/single"
 LIBRETRANSLATE_TIMEOUT = 8
 
 # ===== Google Play 查重 =====

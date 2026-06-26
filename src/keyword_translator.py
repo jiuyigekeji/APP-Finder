@@ -24,6 +24,20 @@ def _is_mostly_chinese(text):
     return cn / len(s) > 0.3
 
 
+def _by_google(text):
+    """Google 翻译非官方端点（免费无 key，稳定）。返回中文译文或 None。"""
+    url = config.GOOGLE_TRANSLATE_URL + "?client=gtx&sl=auto&tl=zh&dt=t&q=" + urllib.parse.quote(text)
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": UA})
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            data = json.loads(resp.read().decode("utf-8", errors="ignore"))
+        # data[0] 是翻译片段列表，每项 [translated, original, ...]
+        return "".join(seg[0] for seg in data[0] if seg and seg[0])
+    except Exception as e:
+        print("[translate] google 失败: %s" % e)
+        return None
+
+
 def _by_ai(text):
     if not (config.ENABLE_AI_ANALYSIS and config.AI_API_KEY):
         return None
@@ -60,7 +74,7 @@ def translate(text):
     text = str(text).strip()
     if not text or _is_mostly_chinese(text):
         return text
-    for fn in (_by_ai, _by_libretranslate):
+    for fn in (_by_google, _by_ai, _by_libretranslate):
         t = fn(text)
         if t and t.lower() != text.lower():
             return t
