@@ -15,7 +15,6 @@ import config
 UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124 Safari/537.36"
 HN_SEARCH = "https://hn.algolia.com/api/v1/search"
 
-# 搜这类帖子：用户主动表达「想要/找不到」某工具
 DEMAND_QUERIES = [
     "want an app that",
     "wish there was an app",
@@ -25,7 +24,7 @@ DEMAND_QUERIES = [
     "cannot find an app",
     "would pay for an app",
 ]
-MIN_POINTS = 3         # 最低点赞，过滤噪声
+MIN_POINTS = 3
 MAX_POSTS_PER_QUERY = 8
 MAX_TOTAL_POSTS = 30
 
@@ -37,7 +36,6 @@ def _get(url, timeout=12):
 
 
 def _fetch_posts():
-    """从 HN 抓需求类帖子。返回 [{title, url, points, objectID}]。"""
     posts = []
     seen = set()
     for q in DEMAND_QUERIES:
@@ -72,28 +70,27 @@ def _fetch_posts():
 
 
 def _ai_extract_demands(posts):
-    """用 AI 从帖子标题批量抽取结构化蓝海需求。
-
-    返回 [{need, audience, why_gap, search_query}]。
-    search_query 是用于商店查重的英文关键词。
-    """
+    """用 AI 从帖子标题抽取结构化蓝海需求，并直接判断是否蓝海。"""
     if not (config.ENABLE_AI_ANALYSIS and config.AI_API_KEY):
         return []
     titles = [p["title"] for p in posts]
     prompt = (
-        "你是一名产品经理，专长发现蓝海 APP 机会。下面是用户在 Hacker News 上主动表达的未满足需求。"
-        "请从中抽取真正有蓝海潜力的需求（排除已饱和的红海如记账/计算器/天气/笔记），输出 JSON 数组，每项：\n"
-        "need: 需求是什么（一句话）\n"
-        "audience: 目标细分人群\n"
-        "why_gap: 为什么现有方案不够/缺失\n"
-        "search_query: 用于在应用商店搜索同类 APP 的英文关键词（1-3个词）\n"
-        "只返回真正细分、小众、供给不足的需求，最多 8 个。\n\n"
+        "你是一名资深产品经理，专长发现蓝海 APP 机会。下面是用户在 Hacker News 上主动表达的未满足需求。\n"
+        "请从中识别真正有蓝海潜力的细分需求（排除已饱和红海：记账/计算器/天气/笔记/清理/输入法/壁纸/"
+        "音乐播放器/文件管理器/翻译/录音转文字/PDF转换/背单词/截图），输出 JSON 对象：\n"
+        '{"demands": [{"need":"具体需求(含场景,一句话)","audience":"细分人群",'
+        '"why_gap":"为何现有方案不够","search_query":"4-8词的精准英文短语用于商店搜索",'
+        '"existing_apps":"现有最接近的APP及不足,若无写none","is_blue_ocean":true}]}\n'
+        "要求：\n"
+        "1. search_query 必须具体精准(如 'search midi files by note pattern' 而非 'midi search')\n"
+        "2. 只返回 is_blue_ocean=true 且真正细分小众的需求，最多 6 个\n"
+        "3. 只输出 JSON，不要 markdown 代码块\n\n"
         "帖子标题列表：\n%s"
     ) % "\n".join(titles)
     body = json.dumps({
         "model": config.AI_MODEL,
         "messages": [
-            {"role": "system", "content": "你是产品经理，专长发现蓝海 APP 机会，只输出合法 JSON 数组，不要 markdown 代码块。"},
+            {"role": "system", "content": "你是产品经理，只输出合法 JSON，不要代码块。"},
             {"role": "user", "content": prompt},
         ],
         "temperature": 0.4,
@@ -109,7 +106,6 @@ def _ai_extract_demands(posts):
             data = json.loads(resp.read().decode("utf-8", errors="ignore"))
         text = data["choices"][0]["message"]["content"]
         result = json.loads(text)
-        # 兼容返回 {demands: [...]} 或 [...]
         if isinstance(result, dict):
             for k in ("demands", "data", "items", "list"):
                 if k in result and isinstance(result[k], list):
@@ -124,35 +120,77 @@ def _ai_extract_demands(posts):
 
 
 def _rule_extract_demands(posts):
-    """无 AI 时，规则抽取：把标题作为需求，取关键词作搜索词。"""
     out = []
     for p in posts:
-        title = p["title"]
-        # 去掉 Ask HN: / Show HN: 前缀
-        clean = title.replace("Ask HN:", "").replace("Show HN:", "").strip()
+        clean = p["title"].replace("Ask HN:", "").replace("Show HN:", "").strip()
         out.append({
-            "need": clean,
-            "audience": "",
-            "why_gap": "",
-            "search_query": clean[:40],
+            "need": clean, "audience": "", "why_gap": "",
+            "search_query": clean[:40], "is_blue_ocean": False,
         })
     return out[:10]
 
 
+def judge_blue_ocean(demand, store_check):
+    """二次判断：把商店查重结果喂给 AI，判断现有 APP 是否真满足该细分需求。
+
+    返回 (is_blue_ocean, reason)。AI 看到现有 APP 后能区分「名义上有同类」和「真正满足需求」。
+    """
+    if not (config.ENABLE_AI_ANALYSIS and config.AI_API_KEY):
+        return demand.get("is_blue_ocean", False), ""
+    # 收集各商店的样本 APP 名
+    existing = []
+    for sname, st in store_check.get("stores", {}).items():
+        for it in st.get("samples", [])[:3]:
+            if it.get("name"):
+                existing.append("%s: %s" % (sname, it["name"]))
+    existing_str = "\n".join(existing[:10]) if existing else "（无）"
+
+    prompt = (
+        "需求: %s\n"
+        "目标人群: %s\n"
+        "为何现有方案不够: %s\n\n"
+        "应用商店搜索该需求后返回的现有 APP:\n%s\n\n"
+        "请判断: 这些现有 APP 是否真正满足上述细分需求（注意：搜索词可能匹配到不相关的 APP）？\n"
+        "输出 JSON: {\"is_blue_ocean\": true/false, \"reason\": \"为何现有APP不满足/已满足\"}"
+    ) % (demand.get("need", ""), demand.get("audience", ""),
+         demand.get("why_gap", ""), existing_str)
+    body = json.dumps({
+        "model": config.AI_MODEL,
+        "messages": [
+            {"role": "system", "content": "你是产品经理，判断细分需求是否被现有APP满足，只输出JSON。"},
+            {"role": "user", "content": prompt},
+        ],
+        "temperature": 0.2,
+        "response_format": {"type": "json_object"},
+    }).encode("utf-8")
+    url = config.AI_API_BASE.rstrip("/") + "/chat/completions"
+    try:
+        req = urllib.request.Request(url, data=body, headers={
+            "Content-Type": "application/json",
+            "Authorization": "Bearer " + config.AI_API_KEY,
+        })
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            data = json.loads(resp.read().decode("utf-8", errors="ignore"))
+        result = json.loads(data["choices"][0]["message"]["content"])
+        return bool(result.get("is_blue_ocean")), result.get("reason", "")
+    except Exception as e:
+        print("[blueocean] 二次判断失败: %s" % e)
+        return demand.get("is_blue_ocean", False), ""
+
+
 def mine():
-    """主入口：抓 HN 帖子 → AI/规则抽取需求。返回 [需求 dict]。"""
     posts = _fetch_posts()
     if not posts:
         return []
     demands = _ai_extract_demands(posts)
     if not demands:
         demands = _rule_extract_demands(posts)
-    # 附上来源帖
-    for i, d in enumerate(demands):
-        if i < len(posts):
-            d["source_post"] = posts[i]["title"]
-            d["source_url"] = posts[i]["url"]
-            d["source_points"] = posts[i]["points"]
+    # 不按索引附 source（AI 抽取顺序与原帖无关，强附会误导）
+    # 来源统一标注为 Hacker News
+    for d in demands:
+        d["source_post"] = "Hacker News 需求帖"
+        d["source_url"] = "https://news.ycombinator.com/"
+        d["source_points"] = 0
     return demands
 
 

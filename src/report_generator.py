@@ -49,18 +49,25 @@ def generate(date_str, translated_grouped, repos, ai_results=None, demands=None,
     # ===== 一、蓝海机会（最高优先）=====
     blue_gaps = blue_gaps or []
     lines.append("## 一、🟢 蓝海机会（供给缺口 + 真实需求）\n")
-    lines.append("> 来自 Hacker News 用户主动表达的未满足需求，经商店查重验证同类 APP ≤ %d 个。\n" % config.LOW_SUPPLY_THRESHOLD)
+    lines.append("> 来自 Hacker News 用户主动表达的未满足需求，由 AI 判断现有 APP 是否满足该细分场景。\n")
     if blue_gaps:
         for i, bd in enumerate(blue_gaps, 1):
-            lines.append("### 蓝海 %d. %s\n" % (i, bd.get("need", "")[:60]))
+            lines.append("### 蓝海 %d. %s\n" % (i, bd.get("need", "")[:80]))
             if bd.get("audience"):
-                lines.append("- 目标人群: %s" % bd["audience"])
+                lines.append("- 🎯 目标人群: %s" % bd["audience"])
             if bd.get("why_gap"):
-                lines.append("- 供给缺口: %s" % bd["why_gap"])
+                lines.append("- 💡 供给缺口: %s" % bd["why_gap"])
+            if bd.get("existing_apps") and bd.get("existing_apps") != "none":
+                lines.append("- 📱 现有方案不足: %s" % bd["existing_apps"])
+            if bd.get("judge_reason"):
+                lines.append("- ✅ AI 判断: %s" % bd["judge_reason"])
             sc = bd.get("store_check")
             if sc:
                 lines.append("- 商店查重: 全平台同类 %d 个 | %s" % (sc.get("total_similar", 0), sc.get("competition", "")))
-                lines.append("- 分类: %s | 搜索词: %s" % (sc.get("category", ""), sc.get("query", "")))
+                q_show = sc.get("query", "") or sc.get("query_en", "")
+                if sc.get("query_zh"):
+                    q_show = "%s / %s" % (sc.get("query_en", ""), sc.get("query_zh", ""))
+                lines.append("- 分类: %s | 搜索词: %s" % (sc.get("category", ""), q_show))
             if bd.get("source_post"):
                 lines.append("- 来源帖子: %s（%s 分）" % (bd["source_post"][:60], bd.get("source_points", 0)))
             if bd.get("source_url"):
@@ -161,7 +168,7 @@ def generate(date_str, translated_grouped, repos, ai_results=None, demands=None,
             lines.append("- 解决的问题: %s" % ai.get("problem", ""))
             lines.append("- 用户痛点: %s" % ai.get("pain_point", ""))
         else:
-            lines.append("- _（未启用 AI 代码分析，以下为启发式抽取）_")
+            lines.append("- _（AI 代码分析未返回结果，可能因 GitHub 限速拉不到源码；以下为启发式抽取）_")
             for p in r["pain_points"]:
                 lines.append("- %s" % p)
             if not r["pain_points"]:

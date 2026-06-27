@@ -190,6 +190,38 @@ def check(repo):
     }
 
 
+def check_dual(en_query, zh_query):
+    """海外商店用英文查，国内商店用中文查。
+
+    en_query: Apple/Google Play 的英文搜索词
+    zh_query: 华为/小米/vivo 的中文搜索词
+    """
+    apple_count, apple_items = _apple_search(en_query)
+    play_count, play_items = _google_play_search(en_query)
+    category = _classify({"desc": en_query, "topics": []}, apple_items, play_items)
+
+    stores = {
+        "apple": {"count": apple_count, "samples": apple_items},
+        "google_play": {"count": play_count, "samples": play_items},
+    }
+    cn_total = 0
+    for sname in config.STORE_SEARCH_URLS:
+        c, items = _cn_store_search(sname, zh_query)
+        stores[sname] = {"count": c, "samples": items}
+        if c > 0:
+            cn_total += c
+
+    total = apple_count + play_count + cn_total
+    return {
+        "query_en": en_query,
+        "query_zh": zh_query,
+        "category": category,
+        "stores": stores,
+        "total_similar": total,
+        "competition": _competition_level(apple_count, play_count, cn_total),
+    }
+
+
 if __name__ == "__main__":
     import pprint
     pprint.pprint(check({"desc": "A habit tracker app", "name": "x/habit", "topics": ["habit"]}))

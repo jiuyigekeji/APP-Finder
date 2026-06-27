@@ -63,8 +63,13 @@ def _pick_source_files(tree):
 
 
 def _fetch_file(repo, path):
-    """获取单文件内容（base64）。"""
-    url = "https://api.github.com/repos/%s/contents/%s" % (repo["name"], urllib.parse.quote(path))
+    """获取单文件内容（base64）。path 为空或请求失败返回空串。"""
+    if not path:
+        return ""
+    try:
+        url = "https://api.github.com/repos/%s/contents/%s" % (repo["name"], urllib.parse.quote(path))
+    except Exception:
+        return ""
     try:
         req = urllib.request.Request(url, headers=_headers())
         with urllib.request.urlopen(req, timeout=15) as resp:
@@ -90,6 +95,8 @@ def _gather_code(repo):
         content = _fetch_file(repo, path)
         if content:
             parts.append("### 文件: %s\n```\n%s\n```" % (path, content))
+    if not parts:
+        return repo.get("readme_excerpt", "")
     return "\n\n".join(parts)[:12000]
 
 
@@ -116,19 +123,25 @@ def _call_ai(prompt):
 
 
 def deep_analyze(repo):
-    """分析整套代码，返回 dict: problem / pain_point / app_idea / why_app / key_logic。"""
+    """分析整套代码，返回 dict: problem / pain_point / app_idea / why_app / key_logic。
+
+    拉不到源码时（GitHub 限速），降级用 README + 描述做分析。
+    """
     if not (config.ENABLE_AI_ANALYSIS and config.AI_API_KEY):
         return None
     code = _gather_code(repo)
+    # 源码拉取失败时，用 README 摘要兜底
+    if not code:
+        code = repo.get("readme_excerpt", "") or "（无源码与 README）"
     prompt = (
-        "你是一名资深产品经理兼工程师。请分析以下 GitHub 仓库的源代码，理解它实现了什么逻辑，"
+        "你是一名资深产品经理兼工程师。请分析以下 GitHub 仓库，理解它实现了什么逻辑，"
         "然后输出 JSON：\n"
-        "key_logic: 核心代码逻辑是什么（实现原理概要）\n"
+        "key_logic: 核心逻辑是什么（实现原理概要，基于源码或README推断）\n"
         "problem: 解决了什么问题\n"
         "pain_point: 用户的痛点是什么\n"
         "app_idea: 适合做成什么 APP/小程序\n"
         "why_app: 为什么适合做成 APP\n\n"
-        "仓库: %s\n描述: %s\n\n源代码：\n%s"
+        "仓库: %s\n描述: %s\n\n内容：\n%s"
     ) % (repo["name"], repo["desc"], code)
     try:
         return _call_ai(prompt)
