@@ -1,4 +1,4 @@
-﻿# -*- coding: utf-8 -*-
+# -*- coding: utf-8 -*-
 """主入口：需求挖掘 -> 翻译 -> GitHub 搜索 -> 商店查重(看供给) -> AI 分析 -> 报告。
 
 需求信号来源（按优先级）：
@@ -13,6 +13,8 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import config
 import demand_miner
+import blue_ocean_miner
+import app_store_checker
 import query_translator
 import keyword_collector
 import keyword_translator
@@ -29,6 +31,21 @@ def run():
     tz = timezone(timedelta(hours=8))
     date_str = datetime.now(tz).strftime("%Y-%m-%d")
     print("=== APP-Finder 运行 %s ===" % date_str)
+
+    # 0. 蓝海挖掘：HN 用户主动表达的未满足需求（AI 抽取）
+    blue_demands = blue_ocean_miner.mine()
+    # 对蓝海需求做商店查重（限前 8 条，避免耗时过长）
+    for bd in blue_demands[:8]:
+        sq = bd.get("search_query", "")
+        if sq:
+            try:
+                bd["store_check"] = app_store_checker.check({"desc": sq, "name": "", "topics": []})
+            except Exception as e:
+                print("[main] 蓝海查重失败: %s" % e)
+    # 只保留供给不足的（蓝海）
+    blue_gaps = [bd for bd in blue_demands
+                 if bd.get("store_check", {}).get("total_similar", 99) <= config.LOW_SUPPLY_THRESHOLD]
+    print("[main] 蓝海需求 %d 条，供给缺口 %d 条" % (len(blue_demands), len(blue_gaps)))
 
     # 1. 需求挖掘（主）：百度联想词扩展长尾需求
     demands = demand_miner.mine()  # [(需求词, 来源种子词)]
@@ -71,7 +88,7 @@ def run():
     report = report_generator.generate(
         date_str,
         {"demands": demand_translated, "hot": hot_translated},
-        analyzed, ai_results, demands=demands)
+        analyzed, ai_results, demands=demands, blue_gaps=blue_gaps)
     os.makedirs(REPORTS_DIR, exist_ok=True)
     out_path = os.path.join(REPORTS_DIR, date_str + ".md")
     with open(out_path, "w", encoding="utf-8", newline="\n") as f:

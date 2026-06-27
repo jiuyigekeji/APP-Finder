@@ -36,18 +36,42 @@ def _supply_gap_flag(store_check):
     return ""
 
 
-def generate(date_str, translated_grouped, repos, ai_results=None, demands=None):
+def generate(date_str, translated_grouped, repos, ai_results=None, demands=None, blue_gaps=None):
     ai_results = ai_results or {}
     demands = demands or []
     tz = timezone(timedelta(hours=8))
     lines = []
     lines.append("# APP 机会发现日报 - %s\n" % date_str)
     lines.append("> 自动生成时间: %s" % datetime.now(tz).strftime("%Y-%m-%d %H:%M CST"))
-    lines.append("> 需求信号: 百度联想词(用户持续搜索) / 热搜(趋势参考)")
+    lines.append("> 需求信号: Hacker News(蓝海) / 百度联想词(持续搜索) / 热搜(趋势参考)")
     lines.append("> 供给信号: Apple/Google Play/华为/小米/vivo 商店查重\n")
 
-    # ===== 一、用户真实需求 =====
-    lines.append("## 一、用户真实需求（百度联想词扩展）\n")
+    # ===== 一、蓝海机会（最高优先）=====
+    blue_gaps = blue_gaps or []
+    lines.append("## 一、🟢 蓝海机会（供给缺口 + 真实需求）\n")
+    lines.append("> 来自 Hacker News 用户主动表达的未满足需求，经商店查重验证同类 APP ≤ %d 个。\n" % config.LOW_SUPPLY_THRESHOLD)
+    if blue_gaps:
+        for i, bd in enumerate(blue_gaps, 1):
+            lines.append("### 蓝海 %d. %s\n" % (i, bd.get("need", "")[:60]))
+            if bd.get("audience"):
+                lines.append("- 目标人群: %s" % bd["audience"])
+            if bd.get("why_gap"):
+                lines.append("- 供给缺口: %s" % bd["why_gap"])
+            sc = bd.get("store_check")
+            if sc:
+                lines.append("- 商店查重: 全平台同类 %d 个 | %s" % (sc.get("total_similar", 0), sc.get("competition", "")))
+                lines.append("- 分类: %s | 搜索词: %s" % (sc.get("category", ""), sc.get("query", "")))
+            if bd.get("source_post"):
+                lines.append("- 来源帖子: %s（%s 分）" % (bd["source_post"][:60], bd.get("source_points", 0)))
+            if bd.get("source_url"):
+                lines.append("- 链接: %s" % bd["source_url"])
+            lines.append("")
+            lines.append("---\n")
+    else:
+        lines.append("（今日未发现供给缺口的蓝海需求。启用 AI 可显著提升蓝海发现质量。）\n")
+
+    # ===== 二、用户真实需求 =====
+    lines.append("## 二、用户真实需求（百度联想词扩展）\n")
     lines.append("> 以下为用户持续搜索的「解决方案型」需求，非突发事件，适合 APP 长周期开发。\n")
     demand_translated = translated_grouped.get("demands", [])
     if demand_translated:
@@ -62,7 +86,7 @@ def generate(date_str, translated_grouped, repos, ai_results=None, demands=None)
         lines.append("（未挖掘到需求词）\n")
 
     # ===== 二、热搜趋势（辅助）=====
-    lines.append("## 二、热搜趋势（辅助参考）\n")
+    lines.append("## 三、热搜趋势（辅助参考）\n")
     hot = translated_grouped.get("hot", {})
     baidu = hot.get("baidu", [])
     google = hot.get("google", [])
@@ -80,7 +104,7 @@ def generate(date_str, translated_grouped, repos, ai_results=None, demands=None)
     # ===== 三、可做的 APP 候选 =====
     candidates = [r for r in repos if r["score"] >= config.MIN_REPORT_SCORE]
     if not candidates:
-        lines.append("## 三、可做的 APP 候选\n")
+        lines.append("## 四、可做的 APP 候选\n")
         lines.append("今日未发现满足阈值的候选。可调整 `config.py` 中的 `MIN_REPORT_SCORE`。\n")
         return "\n".join(lines)
 
@@ -88,7 +112,7 @@ def generate(date_str, translated_grouped, repos, ai_results=None, demands=None)
     candidates.sort(key=lambda r: (
         0 if r.get("store_check", {}).get("total_similar", 99) <= config.LOW_SUPPLY_THRESHOLD else 1,
         -r["score"]))
-    lines.append("## 三、可做的 APP 候选（🟢供给缺口优先，按评分排序）\n")
+    lines.append("## 四、可做的 APP 候选（🟢供给缺口优先，按评分排序）\n")
     for idx, r in enumerate(candidates, 1):
         gap = _supply_gap_flag(r.get("store_check"))
         lines.append("### %d. %s （评分 %d%s）\n" % (idx, r["name"], r["score"], gap))
@@ -119,11 +143,11 @@ def generate(date_str, translated_grouped, repos, ai_results=None, demands=None)
                     for it in st.get("samples", [])[:2]:
                         extra = []
                         if it.get("genre"):
-                            extra.append(it["genre"])
+                            extra.append(str(it["genre"]))
                         if it.get("installs"):
-                            extra.append(it["installs"])
+                            extra.append(str(it["installs"]))
                         if it.get("price"):
-                            extra.append(it["price"])
+                            extra.append(str(it["price"]))
                         tail = "（%s）" % " · ".join(extra) if extra else ""
                         lines.append("  - %s%s" % (it.get("name", ""), tail))
                 else:
@@ -160,7 +184,7 @@ def generate(date_str, translated_grouped, repos, ai_results=None, demands=None)
         lines.append("- 先做 MVP：聚焦 1 个核心场景，验证用户付费意愿\n")
         lines.append("---\n")
 
-    lines.append("## 四、说明\n")
+    lines.append("## 五、说明\n")
     lines.append("- 需求信号来自百度联想词（用户持续搜索的解决方案），区别于热搜突发事件。")
     lines.append("- 🟢供给缺口 = 全平台同类 APP ≤ %d 个，是值得优先验证的洼地。" % config.LOW_SUPPLY_THRESHOLD)
     lines.append("- 候选来自 GitHub 近期活跃且有 star 验证的项目，已做商店查重评估竞争。")
