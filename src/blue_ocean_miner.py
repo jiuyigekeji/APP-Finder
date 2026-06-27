@@ -127,16 +127,21 @@ def _ai_extract_demands(posts):
         return []
     titles = [p["title"] for p in posts]
     prompt = (
-        "你是一名资深产品经理，专长发现蓝海 APP 机会。下面是用户在 Hacker News 上主动表达的未满足需求。\n"
-        "请从中识别真正有蓝海潜力的细分需求（排除已饱和红海：记账/计算器/天气/笔记/清理/输入法/壁纸/"
-        "音乐播放器/文件管理器/翻译/录音转文字/PDF转换/背单词/截图），输出 JSON 对象：\n"
+        "你是一名资深产品经理，专长发现蓝海 APP 机会。下面是用户在社区(Hacker News/Reddit)主动表达的未满足需求。\n"
+        "请按以下标准筛选真正有蓝海潜力的需求：\n"
+        "- 需求真实：有具体使用场景 + 明确细分人群（不是泛泛的点子）\n"
+        "- 痛点具体：用户在找某个工具/能力但找不到，而非随便聊聊\n"
+        "- 非红海：排除记账/计算器/天气/笔记/清理/输入法/壁纸/音乐播放器/文件管理器/翻译/录音转文字/PDF转换/背单词/截图/待办/番茄钟\n"
+        "输出 JSON 对象：\n"
         '{"demands": [{"need":"具体需求(含场景,一句话)","audience":"细分人群",'
-        '"why_gap":"为何现有方案不够","search_query":"4-8词的精准英文短语用于商店搜索",'
-        '"existing_apps":"现有最接近的APP及不足,若无写none","is_blue_ocean":true}]}\n'
+        '"why_gap":"为何现有方案不够","search_queries":["宽泛词2-3个","中等词4-6个","精准词6-10个"],'
+        '"existing_apps":"现有最接近的APP及不足,若无写none","is_blue_ocean":true,"real_demand":true/false}]}\n'
         "要求：\n"
-        "1. search_query 必须具体精准(如 'search midi files by note pattern' 而非 'midi search')\n"
-        "2. 只返回 is_blue_ocean=true 且真正细分小众的需求，最多 6 个\n"
-        "3. 只输出 JSON，不要 markdown 代码块\n\n"
+        "1. search_queries 给3个不同宽窄的英文短语，用于商店查重交叉验证（宽/中/窄各一）\n"
+        "2. real_demand：该需求是否有明确场景+人群+找工具意图，纯点子/吐槽设为 false\n"
+        "3. 只返回 is_blue_ocean=true 且 real_demand=true 的需求，最多 6 个\n"
+        "4. 宁缺毋滥：宁可少给，不要给红海或伪需求\n"
+        "5. 只输出 JSON，不要 markdown 代码块\n\n"
         "帖子标题列表：\n%s"
     ) % "\n".join(titles)
     body = json.dumps({
@@ -196,7 +201,12 @@ def judge_blue_ocean(demand, store_check):
     threshold = config.LOW_SUPPLY_THRESHOLD
     total = store_check.get("total_similar", 0)
     need = demand.get("need", "")
-    en_sq = demand.get("search_query", "")
+    # 兼容：新格式 search_queries(列表) 取中间词，旧格式 search_query(单字符串)
+    sqs = demand.get("search_queries") or []
+    if isinstance(sqs, list) and sqs:
+        en_sq = sqs[len(sqs) // 2]  # 中间词（中等宽窄，最接近真实供给）
+    else:
+        en_sq = demand.get("search_query", "")
 
     # 收集各商店的样本 APP 名
     existing = []

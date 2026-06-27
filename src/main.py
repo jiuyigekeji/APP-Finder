@@ -32,23 +32,34 @@ def run():
     date_str = datetime.now(tz).strftime("%Y-%m-%d")
     print("=== APP-Finder 运行 %s ===" % date_str)
 
-    # 0. 蓝海挖掘：HN 用户主动表达的未满足需求（AI 抽取）
+    # 0. 需求驱动蓝海：HN/Reddit 用户主动表达的未满足需求（AI 抽取）
     blue_demands = blue_ocean_miner.mine()
-    # 对蓝海需求做商店查重（海外用英文，国内用中文）+ AI 二次判断
+    # 对蓝海需求做商店查重（多 search_query 交叉验证）+ AI 二次判断
     import keyword_translator
     for bd in blue_demands[:6]:
-        en_sq = bd.get("search_query", "")
-        if not en_sq:
+        # 兼容：AI 现在返回 search_queries(列表)，旧格式返回 search_query(单字符串)
+        queries = bd.get("search_queries") or [bd.get("search_query", "")]
+        queries = [q for q in queries if q]
+        if not queries:
             continue
-        # 翻译成中文供国内商店查重
-        zh_sq = keyword_translator.translate(en_sq) or en_sq
-        try:
-            bd["store_check"] = app_store_checker.check_dual(en_sq, zh_sq)
-            print("[main] 蓝海查重 en='%s' zh='%s' -> 同类 %d 个" % (en_sq[:20], zh_sq[:20], bd["store_check"].get("total_similar", 0)))
-        except Exception as e:
-            print("[main] 蓝海查重失败: %s" % e)
-        # AI 二次判断：看到现有 APP 后判断是否真满足细分需求
-        if bd.get("store_check"):
+        # 多查询交叉查重：每个查询词都查，取中位数同类数（避免宽词误判红海/窄词误判蓝海）
+        checks = []
+        for en_sq in queries[:3]:  # 最多3个词
+            zh_sq = keyword_translator.translate(en_sq) or en_sq
+            try:
+                sc = app_store_checker.check_dual(en_sq, zh_sq)
+                checks.append(sc)
+                print("[main] 蓝海查重 en='%s' -> 同类 %d 个" % (en_sq[:24], sc.get("total_similar", 0)))
+            except Exception as e:
+                print("[main] 蓝海查重失败: %s" % e)
+        if checks:
+            # 取中位数同类数（综合各查询词，避免单词偏差）
+            totals = sorted(sc.get("total_similar", 0) for sc in checks)
+            mid = totals[len(totals) // 2]
+            bd["store_check"] = checks[0]  # 用第一个的详情展示
+            bd["store_check"]["total_similar"] = mid  # 但同类数用中位数
+            bd["store_check"]["_all_queries"] = [q for q in queries[:3]]
+            # AI 二次判断
             is_bo, reason = blue_ocean_miner.judge_blue_ocean(bd, bd["store_check"])
             bd["is_blue_ocean"] = is_bo
             bd["judge_reason"] = reason
@@ -57,7 +68,30 @@ def run():
     if not blue_gaps:
         blue_gaps = [bd for bd in blue_demands
                      if bd.get("store_check", {}).get("total_similar", 99) <= config.LOW_SUPPLY_THRESHOLD]
-    print("[main] 蓝海需求 %d 条，AI 判定蓝海 %d 条" % (len(blue_demands), len(blue_gaps)))
+    print("[main] 需求驱动蓝海 %d 条，判定蓝海 %d 条" % (len(blue_demands), len(blue_gaps)))
+
+    # 0B. 供给驱动蓝海：GitHub 近期高 star 新项目（非APP形态）= 需求被代码验证但未APP化
+    supply_blue = []
+    try:
+        rising = github_searcher.fetch_rising_repos(max_results=15)
+        non_app = [r for r in rising if github_searcher.is_non_app_form(r)]
+        print("[main] 供给驱动：rising %d 个，非APP形态 %d 个" % (len(rising), len(non_app)))
+        for r in non_app[:6]:
+            # 用项目名+描述关键词查商店同类
+            en_q = app_store_checker._build_query(r)
+            zh_q = keyword_translator.translate(en_q) or en_q
+            try:
+                sc = app_store_checker.check_dual(en_q, zh_q)
+                r["store_check"] = sc
+                print("[main] 供给查重 '%s' -> 同类 %d 个" % (r["name"][:30], sc.get("total_similar", 0)))
+                # 同类少 = 蓝海候选（star 验证需求真实，商店同类少 = 供给不足）
+                if sc.get("total_similar", 99) <= config.LOW_SUPPLY_THRESHOLD * 3:  # 放宽到3倍阈值
+                    supply_blue.append(r)
+            except Exception as e:
+                print("[main] 供给查重失败: %s" % e)
+    except Exception as e:
+        print("[main] 供给驱动蓝海失败: %s" % e)
+    print("[main] 供给驱动蓝海候选 %d 条" % len(supply_blue))
 
     # 1. 需求挖掘（主）：百度联想词扩展长尾需求
     demands = demand_miner.mine()  # [(需求词, 来源种子词)]
@@ -75,10 +109,8 @@ def run():
     print("[main] 翻译完成")
 
     # 3. GitHub 搜索：需求词经 query_translator 映射为英文技术词
-    #    （github_searcher 会记录每个仓库命中的英文词，报告里追溯到原始需求词）
     demand_terms = query_translator.build_search_terms(demand_words)  # [(英文词, 原始需求词)]
     hot_terms = keyword_collector.all_keywords(hot)
-    # search 接受 [(query, origin)] 或 [query]，origin 用于追溯
     search_input = [(gq, origin) for gq, origin in demand_terms] + [(w, w) for w in hot_terms]
     repos = github_searcher.search(search_input)
     if not repos:
@@ -98,27 +130,26 @@ def run():
             else:
                 print("[main] AI 分析 '%s' 未返回结果" % r["name"])
 
-    # 5. 报告
-    # 4.5 ????? APP ????????????????? APP ?????????????
+    # 4.5 跨查询推广 APP 回扫
     all_checks = ([bd.get("store_check") for bd in blue_gaps if bd.get("store_check")]
+                  + [r.get("store_check") for r in supply_blue if r.get("store_check")]
                   + [r.get("store_check") for r in analyzed if r.get("store_check")])
     removed_promos = app_store_checker.finalize_promotion_filter(all_checks)
     if removed_promos:
-        print("[main] ?????? APP %d ?: %s" % (len(removed_promos), ", ".join(removed_promos[:10])))
+        print("[main] 过滤付费推广 APP %d 个: %s" % (len(removed_promos), ", ".join(removed_promos[:10])))
 
+    # 5. 报告
     report = report_generator.generate(
         date_str,
         {"demands": demand_translated, "hot": hot_translated},
-        analyzed, ai_results, demands=demands, blue_gaps=blue_gaps)
+        analyzed, ai_results, demands=demands, blue_gaps=blue_gaps, supply_blue=supply_blue)
     os.makedirs(REPORTS_DIR, exist_ok=True)
-    # 文件名精确到分钟，永不覆盖
     ts = datetime.now(tz).strftime("%Y-%m-%d-%H%M")
     out_path = os.path.join(REPORTS_DIR, ts + ".md")
     with open(out_path, "w", encoding="utf-8", newline="\n") as f:
         f.write(report)
     print("[main] 报告已写入: %s" % out_path)
     return True
-
 
 if __name__ == "__main__":
     ok = run()

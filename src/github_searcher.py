@@ -77,5 +77,70 @@ def search(keywords):
     return results
 
 
+def fetch_rising_repos(max_results=15):
+    """供给驱动反查：抓近期 star 暴涨的新项目，作为「需求被代码验证但未APP化」的蓝海候选。
+
+    逻辑：近期创建 + star 较高 + 按 star 降序 = 痛点真实（有人 star）但可能未产品化为 APP。
+    与 search(关键词) 互补：search 是「需求词→仓库」，这里是「仓库→反查供给」。
+    返回 repo 列表（结构与 _pick 一致，额外标注 source=rising）。
+    """
+    since = (datetime.now(timezone.utc) - timedelta(days=config.CREATED_WITHIN_DAYS)).strftime("%Y-%m-%d")
+    # 抓近期高 star 项目；不加关键词，纯按热度
+    # created:>近期：只抓近期创建的新项目（老项目近期push不算新需求）
+    # stars:>200：已积累一定 star = 痛点真实，但可能未产品化为 APP
+    q = "created:>%s stars:>200" % since
+    params = urllib.parse.urlencode({
+        "q": q, "sort": "stars", "order": "desc",
+        "per_page": min(max_results + 5, 30),
+    })
+    url = config.GITHUB_SEARCH_API + "?" + params
+    try:
+        data = _get(url)
+    except Exception as e:
+        print("[github] rising 搜索失败: %s" % e)
+        return []
+    out = []
+    for repo in data.get("items", [])[:max_results]:
+        item = _pick(repo)
+        item["search_keyword"] = "(rising: 近期高star)"
+        item["search_origin"] = "GitHub 近期热门项目"
+        item["source"] = "rising"
+        out.append(item)
+    print("[github] rising 抓取 %d 个近期热门项目" % len(out))
+    return out
+
+
+# 判断项目形态：是否为非APP形态（CLI/库/网页/服务），适合做成APP的候选
+_NON_APP_HINTS = ["cli", "command-line", "library", "sdk", "framework", "api",
+                  "server", "backend", "web", "docker", "self-host", "wrapper",
+                  "terminal", "console", "daemon"]
+# 资源合集类（awesome/list/roadmap/cheatsheet）：star 高但无具体功能，不适合产品化为 APP
+_AGGREGATE_HINTS = ["awesome", "roadmap", "cheatsheet", "cheat sheet", "list of",
+                    "collection of", "curated", "resource list", "学习路线", "资源汇总"]
+
+
+def is_non_app_form(repo):
+    """判断仓库是否为非APP形态（CLI/库/服务/网页），即「有需求但没APP化」的候选。
+
+    APP 形态的仓库（已是 mobile app / flutter / android / ios）不算蓝海候选。
+    """
+    text = ((repo.get("desc") or "") + " " + " ".join(repo.get("topics") or [])).lower()
+    # 已是 APP 形态 -> 不是蓝海候选
+    app_hints = ["android app", "ios app", "mobile app", "flutter app", "react native app",
+                 "kotlin app", "swift app", "小程序", "wechat"]
+    for h in app_hints:
+        if h in text:
+            return False
+    # 资源合集类排除（awesome/roadmap 等，无具体功能可产品化）
+    for h in _AGGREGATE_HINTS:
+        if h in text:
+            return False
+    # 非 APP 形态标记
+    for h in _NON_APP_HINTS:
+        if h in text:
+            return True
+    return False  # 无明确形态标记，保守不算
+
+
 if __name__ == "__main__":
     print(search(["LLM", "RAG"])[:2])

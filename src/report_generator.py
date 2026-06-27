@@ -45,9 +45,10 @@ def _supply_gap_flag(store_check):
     return ""
 
 
-def generate(date_str, translated_grouped, repos, ai_results=None, demands=None, blue_gaps=None):
+def generate(date_str, translated_grouped, repos, ai_results=None, demands=None, blue_gaps=None, supply_blue=None):
     ai_results = ai_results or {}
     demands = demands or []
+    supply_blue = supply_blue or []
     tz = timezone(timedelta(hours=8))
     lines = []
     lines.append("# APP 机会发现日报 - %s\n" % date_str)
@@ -90,6 +91,32 @@ def generate(date_str, translated_grouped, repos, ai_results=None, demands=None,
             lines.append("---\n")
     else:
         lines.append("（今日未发现供给缺口的蓝海需求。启用 AI 可显著提升蓝海发现质量。）\n")
+
+    # ===== 一B、供给驱动蓝海（GitHub 高 star 项目反查）=====
+    lines.append("## 一B、供给驱动蓝海（GitHub 高 star 项目，需求被代码验证但未APP化）\n")
+    lines.append("> 从 GitHub 近期 star 暴涨的非APP形态项目(CLI/库/服务)反查：star 证明需求真实，商店同类少证明供给不足。\n")
+    if supply_blue:
+        for i, r in enumerate(supply_blue, 1):
+            gap = _supply_gap_flag(r.get("store_check"))
+            lines.append("### 供给蓝海 %d. %s%s\n" % (i, r.get("name", ""), gap))
+            lines.append("- 仓库: %s" % r.get("url", ""))
+            lines.append("- 描述: %s" % (r.get("desc") or "(无)"))
+            lines.append("- Star: %d | 语言: %s | 创建: %s" % (r.get("stars", 0), r.get("language") or "未知", (r.get("created_at") or "")[:10]))
+            lines.append("- 来源: GitHub 近期热门项目（star 验证需求真实性）")
+            sc = r.get("store_check")
+            if sc:
+                lines.append("- 商店查重: 全平台同类 %d 个 | %s" % (sc.get("total_similar", 0), sc.get("competition", "")))
+                lines.append("- 分类: %s | 搜索词: %s" % (sc.get("category", ""), _sc_query_display(sc)))
+            lines.append("")
+            lines.append("**蓝海依据**")
+            lines.append("- 该项目有真实 star（用户用脚投票证明痛点存在）")
+            lines.append("- 但形态为 CLI/库/服务，普通用户无法直接使用")
+            lines.append("- 商店同类少 = 移动端供给不足，适合封装成 APP")
+            lines.append("")
+            lines.append("---\n")
+    else:
+        lines.append("（今日未发现供给驱动蓝海候选。可适当调高 rising 抓取量或放宽非APP形态判定。）\n")
+        lines.append("---\n")
 
     # ===== 二、用户真实需求 =====
     lines.append("## 二、用户真实需求（百度联想词扩展）\n")
