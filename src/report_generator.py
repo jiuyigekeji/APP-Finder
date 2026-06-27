@@ -54,6 +54,14 @@ def generate(date_str, translated_grouped, repos, ai_results=None, demands=None,
     lines.append("> 自动生成时间: %s" % datetime.now(tz).strftime("%Y-%m-%d %H:%M CST"))
     lines.append("> 需求信号: Hacker News(蓝海) / 百度联想词(持续搜索) / 热搜(趋势参考)")
     lines.append("> 供给信号: Apple/Google Play/华为/小米/vivo 商店查重\n")
+    # 展示本次过滤的付费推广 APP（来自 app_store_checker.finalize_promotion_filter）
+    try:
+        import app_store_checker as _asc
+        _removed = getattr(_asc, "LAST_REMOVED_PROMOS", [])
+    except Exception:
+        _removed = []
+    if _removed:
+        lines.append("> 已过滤付费推广 APP %d 个: %s" % (len(_removed), "、".join(_removed[:8])))
 
     # ===== 一、蓝海机会（最高优先）=====
     blue_gaps = blue_gaps or []

@@ -113,6 +113,86 @@ def _cn_store_search(store_name, query):
         return 0, []
 
 
+# ---------- 付费推广 APP 过滤 ----------
+# 国内商店搜索结果常混入与关键词无关的付费推广位 APP，会虚高同类数。
+# 过滤策略：静态黑名单 + 单查询相关性兜底 + 跨查询去重（见 finalize_promotion_filter）
+# _promotion_seen: app_name(小写) -> set(查询词)，用于跨查询去重
+_promotion_seen = {}
+LAST_REMOVED_PROMOS = []  # ?? finalize_promotion_filter ????? APP
+
+
+def _name_hit_blacklist(name):
+    if not name:
+        return False
+    low = name.lower()
+    for bad in getattr(config, "PROMOTION_BLACKLIST", []):
+        if bad.lower() in low:
+            return True
+    return False
+
+
+def _relevance(name, query):
+    """APP 名与查询词的字符交集比例（0~1）。用于兜底识别无关推广。"""
+    if not name or not query:
+        return 0.0
+    low_name = name.lower()
+    low_query = query.lower()
+    common = sum(1 for ch in low_query if ch in low_name)
+    return common / max(1, len(low_query))
+
+
+def _is_promoted_item(name, query, store_name):
+    """判断单个 APP 是否为付费推广（应剔除）。"""
+    if _name_hit_blacklist(name):
+        return True
+    # 相关性兜底：仅对国内商店启用（海外商店结果相关性通常较好）
+    if store_name in ("huawei", "xiaomi", "vivo"):
+        min_rel = getattr(config, "PROMOTION_RELEVANCE_MIN", 0.0)
+        if min_rel > 0 and query:
+            if _relevance(name, query) < min_rel:
+                return True
+    return False
+
+
+def _filter_items(items, query, store_name):
+    """过滤推广 APP，并记录跨查询出现情况。返回过滤后的 items。"""
+    filtered = []
+    for it in items:
+        name = (it.get("name") or "").strip()
+        if _is_promoted_item(name, query, store_name):
+            continue
+        filtered.append(it)
+        # 记录跨查询出现（仅用名字做 key，子串归一）
+        if name:
+            key = name.lower()
+            _promotion_seen.setdefault(key, set()).add(query)
+    return filtered
+
+
+def finalize_promotion_filter(store_checks):
+    """运行末尾回扫：把跨查询重复 >= 阈值的 APP 从所有结果剔除并重算 total。
+
+    store_checks: list of dict（check/check_dual 的返回，会就地修改）。
+    返回被剔除的推广 APP 名列表（供报告参考）。
+    """
+    threshold = getattr(config, "PROMOTION_REPEAT_THRESHOLD", 3)
+    promoted_names = {name for name, qs in _promotion_seen.items() if len(qs) >= threshold}
+    if not promoted_names:
+        return []
+    for sc in store_checks:
+        if not sc or not sc.get("stores"):
+            continue
+        new_total = 0
+        for sname, st in sc["stores"].items():
+            kept = [it for it in st.get("samples", [])
+                    if (it.get("name") or "").strip().lower() not in promoted_names]
+            st["samples"] = kept
+            st["count"] = len(kept)
+            new_total += len(kept)
+        sc["total_similar"] = new_total
+    globals()["LAST_REMOVED_PROMOS"] = sorted(promoted_names)
+    return sorted(promoted_names)
+
 # ---------- 分类 ----------
 APPLE_GENRE_MAP = {
     "Productivity": "效率", "Utilities": "工具", "Social Networking": "社交",
@@ -175,6 +255,10 @@ def check(repo):
     play_count, play_items = _google_play_search(query)
     category = _classify(repo, apple_items, play_items)
 
+    apple_items = [it for it in apple_items if not _name_hit_blacklist((it.get("name") or ""))]
+    apple_count = len(apple_items)
+    play_items = [it for it in play_items if not _name_hit_blacklist((it.get("name") or ""))]
+    play_count = len(play_items)
     stores = {
         "apple": {"count": apple_count, "samples": apple_items},
         "google_play": {"count": play_count, "samples": play_items},
@@ -182,6 +266,8 @@ def check(repo):
     cn_total = 0
     for sname in config.STORE_SEARCH_URLS:
         c, items = _cn_store_search(sname, query)
+        items = _filter_items(items, query, sname)
+        c = len(items)
         stores[sname] = {"count": c, "samples": items}
         if c > 0:
             cn_total += c
@@ -206,6 +292,10 @@ def check_dual(en_query, zh_query):
     play_count, play_items = _google_play_search(en_query)
     category = _classify({"desc": en_query, "topics": []}, apple_items, play_items)
 
+    apple_items = [it for it in apple_items if not _name_hit_blacklist((it.get("name") or ""))]
+    apple_count = len(apple_items)
+    play_items = [it for it in play_items if not _name_hit_blacklist((it.get("name") or ""))]
+    play_count = len(play_items)
     stores = {
         "apple": {"count": apple_count, "samples": apple_items},
         "google_play": {"count": play_count, "samples": play_items},
@@ -213,6 +303,8 @@ def check_dual(en_query, zh_query):
     cn_total = 0
     for sname in config.STORE_SEARCH_URLS:
         c, items = _cn_store_search(sname, zh_query)
+        items = _filter_items(items, zh_query, sname)
+        c = len(items)
         stores[sname] = {"count": c, "samples": items}
         if c > 0:
             cn_total += c

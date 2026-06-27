@@ -99,6 +99,13 @@ def run():
                 print("[main] AI 分析 '%s' 未返回结果" % r["name"])
 
     # 5. 报告
+    # 4.5 ????? APP ????????????????? APP ?????????????
+    all_checks = ([bd.get("store_check") for bd in blue_gaps if bd.get("store_check")]
+                  + [r.get("store_check") for r in analyzed if r.get("store_check")])
+    removed_promos = app_store_checker.finalize_promotion_filter(all_checks)
+    if removed_promos:
+        print("[main] ?????? APP %d ?: %s" % (len(removed_promos), ", ".join(removed_promos[:10])))
+
     report = report_generator.generate(
         date_str,
         {"demands": demand_translated, "hot": hot_translated},
