@@ -26,6 +26,15 @@ def _kw_line(i, kw, zh):
     return "%d. %s" % (i, kw)
 
 
+def _sc_query_display(sc):
+    """统一处理商店查重的查询词显示（兼容 check 和 check_dual）。"""
+    q = sc.get("query", "") or sc.get("query_en", "")
+    zh = sc.get("query_zh", "")
+    if zh:
+        return "%s / %s" % (q, zh)
+    return q
+
+
 def _supply_gap_flag(store_check):
     """供给缺口标记：商店同类少 = 洼地机会。"""
     if not store_check:
@@ -64,10 +73,7 @@ def generate(date_str, translated_grouped, repos, ai_results=None, demands=None,
             sc = bd.get("store_check")
             if sc:
                 lines.append("- 商店查重: 全平台同类 %d 个 | %s" % (sc.get("total_similar", 0), sc.get("competition", "")))
-                q_show = sc.get("query", "") or sc.get("query_en", "")
-                if sc.get("query_zh"):
-                    q_show = "%s / %s" % (sc.get("query_en", ""), sc.get("query_zh", ""))
-                lines.append("- 分类: %s | 搜索词: %s" % (sc.get("category", ""), q_show))
+                lines.append("- 分类: %s | 搜索词: %s" % (sc.get("category", ""), _sc_query_display(sc)))
             if bd.get("source_post"):
                 lines.append("- 来源帖子: %s（%s 分）" % (bd["source_post"][:60], bd.get("source_points", 0)))
             if bd.get("source_url"):
@@ -139,7 +145,7 @@ def generate(date_str, translated_grouped, repos, ai_results=None, demands=None,
         sc = r.get("store_check")
         if sc:
             lines.append("**推荐 APP 分类**: %s" % sc["category"])
-            lines.append("**应用商店查重**（查询词: %s）" % sc["query"])
+            lines.append("**应用商店查重**（查询词: %s）" % _sc_query_display(sc))
             lines.append("- 竞争程度: %s | 全平台同类约 %d 个" % (sc["competition"], sc["total_similar"]))
             for sname in STORE_ORDER:
                 st = sc["stores"].get(sname, {})

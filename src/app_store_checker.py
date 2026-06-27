@@ -25,13 +25,19 @@ def _get(url, headers=None, timeout=None):
 
 
 def _build_query(repo):
+    """提取商店查重用的查询词。优先用 search_keyword(英文技术词)，其次描述前半句，最后仓库名。"""
+    # 1. 优先用 github 搜索时记录的英文技术词（最精准）
+    sk = (repo.get("search_keyword") or "").strip()
+    if sk and len(sk) <= 40:
+        return sk
+    # 2. 描述：取前半句，去噪，限长
     desc = (repo.get("desc") or "").strip()
     name = (repo.get("name") or "").split("/")[-1]
-    q = desc.split(",")[0].split(".")[0].split(" - ")[0]
+    q = desc.split(",")[0].split(".")[0].split(" - ")[0].split(":")[0]
     q = re.sub(r"[^\w\s\u4e00-\u9fa5]", " ", q).strip()
     if not q:
         q = name.replace("-", " ").replace("_", " ")
-    return q[:60]
+    return q[:40]
 
 
 # ---------- Apple ----------

@@ -2,9 +2,6 @@
 *.pyc
 _*.py
 _tmp*
-# 保留 reports/.gitkeep，但忽略生成的报告（按需调整）
-# 如果想让报告也入库，删掉下面这行
-# reports/*.md
-
 AGENTS.md
 _xr.txt
+# 报告(report/*.md)入库保留，不忽略

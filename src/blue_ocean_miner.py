@@ -169,7 +169,7 @@ def judge_blue_ocean(demand, store_check):
             "Content-Type": "application/json",
             "Authorization": "Bearer " + config.AI_API_KEY,
         })
-        with urllib.request.urlopen(req, timeout=30) as resp:
+        with urllib.request.urlopen(req, timeout=60) as resp:
             data = json.loads(resp.read().decode("utf-8", errors="ignore"))
         result = json.loads(data["choices"][0]["message"]["content"])
         return bool(result.get("is_blue_ocean")), result.get("reason", "")

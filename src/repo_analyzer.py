@@ -106,11 +106,19 @@ def analyze(repos):
     out.sort(key=lambda r: r["score"], reverse=True)
 
     # 应用商店查重（并发，仅对进入报告的候选）
+    # 海外商店用英文(search_keyword)，国内商店用翻译后的中文
     candidates = [r for r in out if r["score"] >= config.MIN_REPORT_SCORE]
     if candidates:
+        import keyword_translator
         from concurrent.futures import ThreadPoolExecutor
+
+        def _check_one(repo):
+            en_q = app_store_checker._build_query(repo)
+            zh_q = keyword_translator.translate(en_q) or en_q
+            return app_store_checker.check_dual(en_q, zh_q)
+
         with ThreadPoolExecutor(max_workers=4) as ex:
-            store_results = list(ex.map(app_store_checker.check, candidates))
+            store_results = list(ex.map(_check_one, candidates))
         for r, sr in zip(candidates, store_results):
             r["store_check"] = sr
         print("[analyzer] 商店查重完成，覆盖 %d 个候选" % len(candidates))
