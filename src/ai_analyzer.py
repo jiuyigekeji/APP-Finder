@@ -94,15 +94,24 @@ def _gather_code(repo):
 
 
 def _call_ai(prompt):
+    """OpenAI 兼容接口调用。要求模型返回 JSON。"""
     body = json.dumps({
-        "contents": [{"parts": [{"text": prompt}]}],
-        "generationConfig": {"responseMimeType": "application/json"},
+        "model": config.AI_MODEL,
+        "messages": [
+            {"role": "system", "content": "你是产品经理兼工程师，只输出合法 JSON，不要 markdown 代码块。"},
+            {"role": "user", "content": prompt},
+        ],
+        "temperature": 0.3,
+        "response_format": {"type": "json_object"},
     }).encode("utf-8")
-    url = "%s/models/%s:generateContent?key=%s" % (config.AI_API_BASE, config.AI_MODEL, config.AI_API_KEY)
-    req = urllib.request.Request(url, data=body, headers={"Content-Type": "application/json"})
+    url = config.AI_API_BASE.rstrip("/") + "/chat/completions"
+    req = urllib.request.Request(url, data=body, headers={
+        "Content-Type": "application/json",
+        "Authorization": "Bearer " + config.AI_API_KEY,
+    })
     with urllib.request.urlopen(req, timeout=60) as resp:
         data = json.loads(resp.read().decode("utf-8", errors="ignore"))
-    text = data["candidates"][0]["content"]["parts"][0]["text"]
+    text = data["choices"][0]["message"]["content"]
     return json.loads(text)
 
 

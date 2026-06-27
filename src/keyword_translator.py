@@ -42,13 +42,20 @@ def _by_ai(text):
     if not (config.ENABLE_AI_ANALYSIS and config.AI_API_KEY):
         return None
     prompt = "把下面这个词组翻译成简洁的中文短语，只输出译文，不要解释：\n%s" % text
-    body = json.dumps({"contents": [{"parts": [{"text": prompt}]}]}).encode("utf-8")
-    url = "%s/models/%s:generateContent?key=%s" % (config.AI_API_BASE, config.AI_MODEL, config.AI_API_KEY)
+    body = json.dumps({
+        "model": config.AI_MODEL,
+        "messages": [{"role": "user", "content": prompt}],
+        "temperature": 0,
+    }).encode("utf-8")
+    url = config.AI_API_BASE.rstrip("/") + "/chat/completions"
     try:
-        req = urllib.request.Request(url, data=body, headers={"Content-Type": "application/json"})
+        req = urllib.request.Request(url, data=body, headers={
+            "Content-Type": "application/json",
+            "Authorization": "Bearer " + config.AI_API_KEY,
+        })
         with urllib.request.urlopen(req, timeout=15) as resp:
             data = json.loads(resp.read().decode("utf-8", errors="ignore"))
-        return data["candidates"][0]["content"]["parts"][0]["text"].strip()
+        return data["choices"][0]["message"]["content"].strip()
     except Exception:
         return None
 

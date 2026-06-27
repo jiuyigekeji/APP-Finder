@@ -91,16 +91,30 @@ def _ai_extract_demands(posts):
         "帖子标题列表：\n%s"
     ) % "\n".join(titles)
     body = json.dumps({
-        "contents": [{"parts": [{"text": prompt}]}],
-        "generationConfig": {"responseMimeType": "application/json"},
+        "model": config.AI_MODEL,
+        "messages": [
+            {"role": "system", "content": "你是产品经理，专长发现蓝海 APP 机会，只输出合法 JSON 数组，不要 markdown 代码块。"},
+            {"role": "user", "content": prompt},
+        ],
+        "temperature": 0.4,
+        "response_format": {"type": "json_object"},
     }).encode("utf-8")
-    url = "%s/models/%s:generateContent?key=%s" % (config.AI_API_BASE, config.AI_MODEL, config.AI_API_KEY)
+    url = config.AI_API_BASE.rstrip("/") + "/chat/completions"
     try:
-        req = urllib.request.Request(url, data=body, headers={"Content-Type": "application/json"})
+        req = urllib.request.Request(url, data=body, headers={
+            "Content-Type": "application/json",
+            "Authorization": "Bearer " + config.AI_API_KEY,
+        })
         with urllib.request.urlopen(req, timeout=60) as resp:
             data = json.loads(resp.read().decode("utf-8", errors="ignore"))
-        text = data["candidates"][0]["content"]["parts"][0]["text"]
+        text = data["choices"][0]["message"]["content"]
         result = json.loads(text)
+        # 兼容返回 {demands: [...]} 或 [...]
+        if isinstance(result, dict):
+            for k in ("demands", "data", "items", "list"):
+                if k in result and isinstance(result[k], list):
+                    result = result[k]
+                    break
         if isinstance(result, list):
             print("[blueocean] AI 抽取 %d 条蓝海需求" % len(result))
             return result

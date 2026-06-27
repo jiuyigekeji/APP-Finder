@@ -50,9 +50,11 @@ W_SINGLE_PURPOSE = 15
 MIN_REPORT_SCORE = 40
 
 ENABLE_AI_ANALYSIS = os.environ.get("ENABLE_AI_ANALYSIS", "false").lower() == "true"
-AI_API_BASE = os.environ.get("AI_API_BASE", "https://generativelanguage.googleapis.com/v1beta")
+# OpenAI 兼容接口（支持各类中转站/官方/OpenAI兼容服务）
+# AI_API_BASE 填到 .../v1 即可，代码会自动拼接 /chat/completions
+AI_API_BASE = os.environ.get("AI_API_BASE", "https://api.openai.com/v1")
 AI_API_KEY = os.environ.get("AI_API_KEY", "")
-AI_MODEL = os.environ.get("AI_MODEL", "gemini-1.5-flash")
+AI_MODEL = os.environ.get("AI_MODEL", "gpt-4o-mini")
 
 # ===== 应用商店查重 =====
 APPLE_SEARCH_API = "https://itunes.apple.com/search"
