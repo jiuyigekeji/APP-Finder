@@ -102,7 +102,15 @@ def fetch_rising_repos(max_results=15):
     out = []
     for repo in data.get("items", [])[:max_results]:
         item = _pick(repo)
-        item["search_keyword"] = "(rising: 近期高star)"
+        # 从描述派生英文查询词（供商店查重用），不要用中文说明串
+        desc = (item.get("desc") or "").strip()
+        # 取描述前半句，保留英文词
+        q = desc.split(",")[0].split(".")[0].split(" - ")[0].split(":")[0]
+        import re as _re
+        q = _re.sub(r"[^A-Za-z0-9\s]", " ", q).strip()
+        if not q:
+            q = item.get("name", "").split("/")[-1].replace("-", " ").replace("_", " ")
+        item["search_keyword"] = q[:40]  # 真实英文查询词
         item["search_origin"] = "GitHub 近期热门项目"
         item["source"] = "rising"
         out.append(item)
