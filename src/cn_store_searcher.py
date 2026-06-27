@@ -146,10 +146,19 @@ _MI_B64_STD = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
 _MI_B64_CUSTOM = "leDTKhmg4MafVFp73x6djvLiHn2G9XPruARBwS0q1OzNJt8WobZsQcYyEICk5U-_"
 _MI_B64_TRANS = str.maketrans(_MI_B64_STD, _MI_B64_CUSTOM)
 _MI_SIG_KEYS = {
-    "activedTimeInterval", "ad", "appId", "count", "keyword", "la", "language",
-    "lo", "co", "model", "device", "_n", "page", "pageSize", "ref", "refs",
-    "flag", "sourcePackage", "pageRef", "searchFrom", "responseType",
-    "native", "renderType", "bottomTab", "pageTag", "type", "stamp", "sid",
+    "activedTimeInterval", "ad", "adExchangeFlag", "adFlag", "apkChannel", "appId",
+    "bottomTab", "carrier", "clientId", "co", "count", "cpuArchitecture", "device",
+    "deviceType", "digest", "downloadAppInfo", "excludedAppIds", "extraDownloadApkChannel",
+    "ext_marketType", "flag", "folderName", "get", "gpId", "h5", "id", "imei",
+    "installDay", "installError", "instance_id", "international", "keyword", "la",
+    "launchDay", "lo", "marketVersion", "miuiBigVersionCode", "miuiBigVersionName",
+    "model", "_n", "needLruCache", "network", "newUser", "oldApkHash", "oldVersionCode",
+    "os", "packageName", "packageNameList", "page", "pageConfigVersion", "pageRef",
+    "pageSize", "pageTag", "params", "pos", "posChain", "previousAppIds", "proxyTimeout",
+    "query", "reason", "recommendDownloadAppInfo", "ref", "refPosition", "refresh",
+    "refs", "resolution", "ro", "sdk", "searchScope", "proxy", "sid", "language",
+    "sourcePackage", "stamp", "targetVersionCode", "type", "update", "versionCode",
+    "webResVersion", "zoneSuffix", "aiQuery",
 }
 _MI_DEVICE = {
     "androidVersion": "9", "childMode": "0", "clientConfigVersion": "447", "co": "CN",
