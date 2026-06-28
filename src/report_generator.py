@@ -35,7 +35,40 @@ def _sc_query_display(sc):
     return q
 
 
+def _fmt_field(val, indent="  "):
+    """格式化 AI 返回字段：list 展开成多行 bullet，string 直接返回。"""
+    if isinstance(val, list):
+        return "\n".join("%s- %s" % (indent, x) for x in val) if val else ""
+    return str(val) if val else ""
+
+
 def _difficulty_lines(item):
+    """生成实现/推广难点展示行。item 可含 difficulty(dict) 或 ai_results 的 impl_/promo_ 字段。"""
+    out = []
+    diff = item.get("difficulty") or {}
+    impl = diff.get("impl_difficulty") or item.get("impl_difficulty")
+    promo = diff.get("promo_difficulty") or item.get("promo_difficulty")
+    if impl or promo:
+        out.append("**实现/推广难点**")
+        if impl:
+            if isinstance(impl, list):
+                out.append("- 实现难点:")
+                for x in impl:
+                    out.append("  - %s" % x)
+            else:
+                out.append("- 实现难点: %s" % impl)
+        if promo:
+            if isinstance(promo, list):
+                out.append("- 推广难点:")
+                for x in promo:
+                    out.append("  - %s" % x)
+            else:
+                out.append("- 推广难点: %s" % promo)
+        out.append("")
+    return out
+
+
+
     """生成实现/推广难点展示行。item 可含 difficulty(dict) 或 ai_results 的 impl_/promo_ 字段。"""
     out = []
     diff = item.get("difficulty") or {}
@@ -315,9 +348,9 @@ def generate(date_str, translated_grouped, repos, ai_results=None, demands=None,
         if ai_full.get("impl_difficulty") or ai_full.get("promo_difficulty"):
             lines.append("**实现/推广难点**")
             if ai_full.get("impl_difficulty"):
-                lines.append("- 实现难点: %s" % ai_full["impl_difficulty"])
+                lines.append("- 实现难点: %s" % _fmt_field(ai_full["impl_difficulty"]))
             if ai_full.get("promo_difficulty"):
-                lines.append("- 推广难点: %s" % ai_full["promo_difficulty"])
+                lines.append("- 推广难点: %s" % _fmt_field(ai_full["promo_difficulty"]))
             lines.append("")
 
         lines.append("**实现方案建议**")
