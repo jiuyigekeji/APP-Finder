@@ -77,27 +77,26 @@ def run():
         rising = github_searcher.fetch_rising_repos(max_results=15)
         non_app = [r for r in rising if github_searcher.is_non_app_form(r)]
         print("[main] 供给驱动：rising %d 个，非APP形态 %d 个" % (len(rising), len(non_app)))
-        for r in non_app[:6]:
-            # 用项目描述派生的英文词查商店，再用 AI 逐一判断（和 hypo 一致，跳过硬阈值）
+        def _verify_supply(r):
             en_q = app_store_checker._build_query(r)
             zh_q = keyword_translator.translate(en_q) or en_q
-            try:
-                sc = app_store_checker.check_dual(en_q, zh_q)
-                r["store_check"] = sc
-                total = sc.get("total_similar", 99)
+            sc = app_store_checker.check_dual(en_q, zh_q)
+            r["store_check"] = sc
+            r["need"] = r.get("desc", "")[:80]
+            r["audience"] = "GitHub 项目用户"
+            r["why_gap"] = "该项目为 %s 形态，普通用户无法直接使用" % r.get("language", "代码")
+            is_bo, reason = blue_ocean_miner.judge_blue_ocean(r, sc, force_ai=True)
+            return r, is_bo, reason, sc.get("total_similar", 99)
+
+        from concurrent.futures import ThreadPoolExecutor
+        with ThreadPoolExecutor(max_workers=4) as ex:
+            for r, is_bo, reason, total in ex.map(_verify_supply, non_app[:6]):
                 print("[main] 供给查重 '%s' -> 名义同类 %d 个" % (r["name"][:30], total))
-                # star 已验证需求真实，再用 AI 判断商店是否真有同类（force_ai 跳过硬阈值）
-                r["need"] = r.get("desc", "")[:80]
-                r["audience"] = "GitHub 项目用户"
-                r["why_gap"] = "该项目为 %s 形态，普通用户无法直接使用" % r.get("language", "代码")
-                is_bo, reason = blue_ocean_miner.judge_blue_ocean(r, sc, force_ai=True)
                 if is_bo:
                     r["is_blue_ocean"] = True
                     r["judge_reason"] = reason
                     supply_blue.append(r)
                     print("[main] 供给 '%s' AI判定蓝海" % r["name"][:24])
-            except Exception as e:
-                print("[main] 供给查重失败: %s" % e)
     except Exception as e:
         print("[main] 供给驱动蓝海失败: %s" % e)
     print("[main] 供给驱动蓝海候选 %d 条" % len(supply_blue))
@@ -108,18 +107,22 @@ def run():
     try:
         hypo_demands = blue_ocean_hypothesizer.mine(max_audiences=8)
         print("[main] 蓝海假设：需求验证通过 %d 条，开始供给验证 ..." % len(hypo_demands))
-        for hd in hypo_demands[:10]:
-            # 供给验证：用 store_query(窄词,含场景) 查商店，避免宽词查到一堆不相关APP
+
+        def _verify_one(hd):
+            """单个假设的供给验证：check_dual + force_ai 判断。返回 (hd, is_bo, reason, total)。"""
             zh_q = hd.get("store_query", "") or hd.get("search_verify_word", "") or hd.get("need", "")[:20]
             en_q = keyword_translator.translate(zh_q) or zh_q
-            try:
-                sc = app_store_checker.check_dual(en_q, zh_q)
-                hd["store_check"] = sc
-                total = sc.get("total_similar", 99)
+            sc = app_store_checker.check_dual(en_q, zh_q)
+            hd["store_check"] = sc
+            total = sc.get("total_similar", 99)
+            is_bo, reason = blue_ocean_miner.judge_blue_ocean(hd, sc, force_ai=True)
+            return hd, is_bo, reason, total, zh_q
+
+        # 并行供给验证（check_dual + judge_blue_ocean 都是网络调用，并行大幅加速）
+        from concurrent.futures import ThreadPoolExecutor
+        with ThreadPoolExecutor(max_workers=4) as ex:
+            for hd, is_bo, reason, total, zh_q in ex.map(_verify_one, hypo_demands[:10]):
                 print("[main] 假设查重 '%s' -> 名义同类 %d 个" % (zh_q[:20], total))
-                # hypo 痛点都是细分场景，商店模糊匹配必然多，必须 AI 逐一判断
-                # force_ai=True 跳过硬阈值前置，让 AI 看分类逐一判断现有APP是否真实现该功能
-                is_bo, reason = blue_ocean_miner.judge_blue_ocean(hd, sc, force_ai=True)
                 if is_bo:
                     hd["is_blue_ocean"] = True
                     hd["judge_reason"] = reason
@@ -127,8 +130,6 @@ def run():
                     print("[main] 假设 '%s' 同类%d但AI判定蓝海" % (zh_q[:16], total))
                 else:
                     print("[main] 假设 '%s' AI判定红海: %s" % (zh_q[:16], reason[:50]))
-            except Exception as e:
-                print("[main] 假设查重失败: %s" % e)
     except Exception as e:
         print("[main] 蓝海假设失败: %s" % e)
     print("[main] 蓝海假设验证通过 %d 条" % len(hypo_blue))
