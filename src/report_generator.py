@@ -45,10 +45,11 @@ def _supply_gap_flag(store_check):
     return ""
 
 
-def generate(date_str, translated_grouped, repos, ai_results=None, demands=None, blue_gaps=None, supply_blue=None):
+def generate(date_str, translated_grouped, repos, ai_results=None, demands=None, blue_gaps=None, supply_blue=None, hypo_blue=None):
     ai_results = ai_results or {}
     demands = demands or []
     supply_blue = supply_blue or []
+    hypo_blue = hypo_blue or []
     tz = timezone(timedelta(hours=8))
     lines = []
     lines.append("# APP 机会发现日报 - %s\n" % date_str)
@@ -116,6 +117,38 @@ def generate(date_str, translated_grouped, repos, ai_results=None, demands=None,
             lines.append("---\n")
     else:
         lines.append("（今日未发现供给驱动蓝海候选。可适当调高 rising 抓取量或放宽非APP形态判定。）\n")
+        lines.append("---\n")
+
+    # ===== 一C、蓝海假设（AI 推理小众人群痛点 + 双重验证）=====
+    lines.append("## 一C、蓝海假设（小众人群痛点，需求验证 + 供给验证）\n")
+    lines.append("> AI 推理小众人群(色弱/左撇子/多肉养护/夜班等)反复遇到但找不到好工具的痛点，\n")
+    lines.append("> 用百度联想词验证「真有人在搜」+ 商店查重验证「同类少」，双重通过 = 蓝海。不依赖 GitHub。\n")
+    if hypo_blue:
+        for i, h in enumerate(hypo_blue, 1):
+            gap = _supply_gap_flag(h.get("store_check"))
+            lines.append("### 蓝海假设 %d. %s%s\n" % (i, h.get("need", "")[:80], gap))
+            if h.get("audience"):
+                lines.append("- 🎯 目标人群: %s" % h["audience"])
+            if h.get("pain"):
+                lines.append("- 💡 痛点: %s" % h["pain"])
+            if h.get("why_no_tool"):
+                lines.append("- ❓ 为何现有工具没解决: %s" % h["why_no_tool"])
+            # 需求验证证据
+            if h.get("related_searches"):
+                lines.append("- ✅ 需求验证(百度联想词): %s" % "、".join(h["related_searches"][:5]))
+            sc = h.get("store_check")
+            if sc:
+                lines.append("- 🏪 供给验证: 全平台同类 %d 个 | %s" % (sc.get("total_similar", 0), sc.get("competition", "")))
+                lines.append("- 分类: %s | 搜索词: %s" % (sc.get("category", ""), _sc_query_display(sc)))
+            lines.append("")
+            lines.append("**蓝海依据**")
+            lines.append("- 人群小众(巨头不做)但痛点具体，会付费")
+            lines.append("- 百度联想词证明真有人在找解决方案")
+            lines.append("- 商店同类少 = 移动端供给不足")
+            lines.append("")
+            lines.append("---\n")
+    else:
+        lines.append("（今日未发现双重验证通过的蓝海假设。可增大人群种子数或调宽供给阈值。）\n")
         lines.append("---\n")
 
     # ===== 二、用户真实需求 =====

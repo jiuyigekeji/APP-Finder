@@ -21,6 +21,7 @@ import keyword_translator
 import github_searcher
 import repo_analyzer
 import ai_analyzer
+import blue_ocean_hypothesizer
 import report_generator
 
 BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -93,6 +94,31 @@ def run():
         print("[main] 供给驱动蓝海失败: %s" % e)
     print("[main] 供给驱动蓝海候选 %d 条" % len(supply_blue))
 
+    # 0C. 蓝海假设：AI 推理小众人群痛点 + 百度联想验证需求 + 商店查重验证供给
+    #     不依赖 GitHub 仓库，不依赖被封社区；需求真实(有人在搜) + 供给不足(同类少) = 蓝海
+    hypo_blue = []
+    try:
+        hypo_demands = blue_ocean_hypothesizer.mine(max_audiences=8)
+        print("[main] 蓝海假设：需求验证通过 %d 条，开始供给验证 ..." % len(hypo_demands))
+        for hd in hypo_demands[:10]:
+            # 供给验证：商店查重（用验证词的中文 + 翻译英文）
+            zh_q = hd.get("search_verify_word", "") or hd.get("need", "")[:20]
+            en_q = keyword_translator.translate(zh_q) or zh_q
+            try:
+                sc = app_store_checker.check_dual(en_q, zh_q)
+                hd["store_check"] = sc
+                total = sc.get("total_similar", 99)
+                print("[main] 假设查重 '%s' -> 同类 %d 个" % (zh_q[:20], total))
+                # 供给不足(同类少) = 蓝海
+                if total <= config.LOW_SUPPLY_THRESHOLD * 3:
+                    hd["is_blue_ocean"] = True
+                    hypo_blue.append(hd)
+            except Exception as e:
+                print("[main] 假设查重失败: %s" % e)
+    except Exception as e:
+        print("[main] 蓝海假设失败: %s" % e)
+    print("[main] 蓝海假设验证通过 %d 条" % len(hypo_blue))
+
     # 1. 需求挖掘（主）：百度联想词扩展长尾需求
     demands = demand_miner.mine()  # [(需求词, 来源种子词)]
 
@@ -142,7 +168,7 @@ def run():
     report = report_generator.generate(
         date_str,
         {"demands": demand_translated, "hot": hot_translated},
-        analyzed, ai_results, demands=demands, blue_gaps=blue_gaps, supply_blue=supply_blue)
+        analyzed, ai_results, demands=demands, blue_gaps=blue_gaps, supply_blue=supply_blue, hypo_blue=hypo_blue)
     os.makedirs(REPORTS_DIR, exist_ok=True)
     ts = datetime.now(tz).strftime("%Y-%m-%d-%H%M")
     out_path = os.path.join(REPORTS_DIR, ts + ".md")
