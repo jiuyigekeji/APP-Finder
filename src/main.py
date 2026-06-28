@@ -179,6 +179,20 @@ def run():
     if removed_promos:
         print("[main] 过滤付费推广 APP %d 个: %s" % (len(removed_promos), ", ".join(removed_promos[:10])))
 
+    # 4.6 蓝海候选困难分析：对每个蓝海候选(假设/供给/需求驱动)分析实现+推广难点
+    if config.ENABLE_AI_ANALYSIS:
+        from concurrent.futures import ThreadPoolExecutor
+        all_blue = blue_gaps + supply_blue + hypo_blue
+        print("[main] 对 %d 个蓝海候选做困难分析 ..." % len(all_blue))
+
+        def _diff_one(item):
+            return item, blue_ocean_miner.analyze_difficulty(item)
+
+        with ThreadPoolExecutor(max_workers=4) as ex:
+            for item, diff in ex.map(_diff_one, all_blue):
+                if diff:
+                    item["difficulty"] = diff
+
     # 5. 报告
     report = report_generator.generate(
         date_str,

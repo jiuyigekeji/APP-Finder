@@ -187,6 +187,48 @@ def _rule_extract_demands(posts):
     return out[:10]
 
 
+def analyze_difficulty(demand):
+    """分析一个蓝海候选做成 APP 的实现难点 + 推广难点。
+
+    用于蓝海假设/供给驱动等无 GitHub 仓库的候选。返回 dict:
+    {impl_difficulty, promo_difficulty}。失败返回 {}。
+    """
+    if not (config.ENABLE_AI_ANALYSIS and config.AI_API_KEY):
+        return {}
+    need = demand.get("need", "")
+    audience = demand.get("audience", "")
+    if not need:
+        return {}
+    prompt = (
+        "你是一名资深产品经理兼工程师。以下是发现的一个 APP 蓝海机会，"
+        "请分析把它做成移动 APP 的难点。输出 JSON（中文）：\n"
+        "impl_difficulty: 实现难点（技术/数据/合规/硬件依赖等，2-4点）\n"
+        "promo_difficulty: 推广难点（获客/冷启动/付费意愿/竞争等，2-4点）\n\n"
+        "蓝海机会: %s\n目标人群: %s"
+    ) % (need, audience)
+    body = json.dumps({
+        "model": config.AI_MODEL,
+        "messages": [
+            {"role": "system", "content": "你是产品经理，分析APP实现的实现与推广难点，只输出JSON。"},
+            {"role": "user", "content": prompt},
+        ],
+        "temperature": 0.3,
+        "response_format": {"type": "json_object"},
+    }).encode("utf-8")
+    url = config.AI_API_BASE.rstrip("/") + "/chat/completions"
+    try:
+        req = urllib.request.Request(url, data=body, headers={
+            "Content-Type": "application/json",
+            "Authorization": "Bearer " + config.AI_API_KEY,
+        })
+        with urllib.request.urlopen(req, timeout=60) as resp:
+            data = json.loads(resp.read().decode("utf-8", errors="ignore"))
+        return json.loads(data["choices"][0]["message"]["content"])
+    except Exception as e:
+        print("[blueocean] 困难分析失败: %s" % e)
+        return {}
+
+
 def judge_blue_ocean(demand, store_check, force_ai=False):
     """二次判断：硬阈值前置 + AI 精判。
 

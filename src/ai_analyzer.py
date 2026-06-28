@@ -135,12 +135,15 @@ def deep_analyze(repo):
         code = repo.get("readme_excerpt", "") or "（无源码与 README）"
     prompt = (
         "你是一名资深产品经理兼工程师。请分析以下 GitHub 仓库，理解它实现了什么逻辑，"
-        "然后输出 JSON：\n"
+        "然后输出 JSON（所有字段用中文）：\n"
+        "zh_summary: 用一句中文通俗说明这个仓库是做什么的（不要直译英文描述，要说清它实现了什么功能）\n"
         "key_logic: 核心逻辑是什么（实现原理概要，基于源码或README推断）\n"
         "problem: 解决了什么问题\n"
         "pain_point: 用户的痛点是什么\n"
         "app_idea: 适合做成什么 APP/小程序\n"
-        "why_app: 为什么适合做成 APP\n\n"
+        "why_app: 为什么适合做成 APP\n"
+        "impl_difficulty: 做成移动APP的实现难点（技术/数据/合规等）\n"
+        "promo_difficulty: 推广难点（获客/冷启动/竞争等）\n\n"
         "仓库: %s\n描述: %s\n\n内容：\n%s"
     ) % (repo["name"], repo["desc"], code)
     try:

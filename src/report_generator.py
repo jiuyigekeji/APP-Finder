@@ -35,6 +35,22 @@ def _sc_query_display(sc):
     return q
 
 
+def _difficulty_lines(item):
+    """生成实现/推广难点展示行。item 可含 difficulty(dict) 或 ai_results 的 impl_/promo_ 字段。"""
+    out = []
+    diff = item.get("difficulty") or {}
+    impl = diff.get("impl_difficulty") or item.get("impl_difficulty")
+    promo = diff.get("promo_difficulty") or item.get("promo_difficulty")
+    if impl or promo:
+        out.append("**实现/推广难点**")
+        if impl:
+            out.append("- 实现难点: %s" % impl)
+        if promo:
+            out.append("- 推广难点: %s" % promo)
+        out.append("")
+    return out
+
+
 def _supply_gap_flag(store_check):
     """供给缺口标记：商店同类少 = 洼地机会。"""
     if not store_check:
@@ -138,7 +154,7 @@ def generate(date_str, translated_grouped, repos, ai_results=None, demands=None,
             lines.append("- 该项目有真实 star（用户用脚投票证明痛点存在）")
             lines.append("- 但形态为 CLI/库/服务，普通用户无法直接使用")
             lines.append("- 商店同类少 = 移动端供给不足，适合封装成 APP")
-            lines.append("")
+            lines.extend(_difficulty_lines(r))
             lines.append("---\n")
     else:
         lines.append("（今日未发现供给驱动蓝海候选。可适当调高 rising 抓取量或放宽非APP形态判定。）\n")
@@ -178,7 +194,7 @@ def generate(date_str, translated_grouped, repos, ai_results=None, demands=None,
                 lines.append("- 名义同类多但经 AI 逐一核对，现有 APP 均未真正实现该细分功能（多为模糊匹配/付费推广）")
             else:
                 lines.append("- 商店同类少 = 移动端供给不足")
-            lines.append("")
+            lines.extend(_difficulty_lines(h))
             lines.append("---\n")
     else:
         lines.append("（今日未发现双重验证通过的蓝海假设。可增大人群种子数或调宽供给阈值。）\n")
@@ -238,6 +254,9 @@ def generate(date_str, translated_grouped, repos, ai_results=None, demands=None,
         elif src_kw:
             lines.append("- 🔑 来源关键词: %s" % src_kw)
         lines.append("- 描述: %s" % (r["desc"] or "(无)"))
+        ai_zh = ai_results.get(r["name"], {})
+        if ai_zh.get("zh_summary"):
+            lines.append("- 📝 中文说明: %s" % ai_zh["zh_summary"])
         lines.append("- Star: %d | 语言: %s | Topics: %s" % (r["stars"], r["language"] or "未知", ", ".join(r["topics"]) or "无"))
         if r["homepage"]:
             lines.append("- 主页: %s" % r["homepage"])
@@ -290,6 +309,16 @@ def generate(date_str, translated_grouped, repos, ai_results=None, demands=None,
         for rs in r["reasons"]:
             lines.append("- %s" % rs)
         lines.append("")
+
+        # 实现/推广难点（来自 ai_analyzer 的 impl_difficulty/promo_difficulty）
+        ai_full = ai_results.get(r["name"], {})
+        if ai_full.get("impl_difficulty") or ai_full.get("promo_difficulty"):
+            lines.append("**实现/推广难点**")
+            if ai_full.get("impl_difficulty"):
+                lines.append("- 实现难点: %s" % ai_full["impl_difficulty"])
+            if ai_full.get("promo_difficulty"):
+                lines.append("- 推广难点: %s" % ai_full["promo_difficulty"])
+            lines.append("")
 
         lines.append("**实现方案建议**")
         lines.append("- 复用该仓库的核心能力作为后端/算法层")
