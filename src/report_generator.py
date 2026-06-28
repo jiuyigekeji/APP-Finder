@@ -65,6 +65,31 @@ def generate(date_str, translated_grouped, repos, ai_results=None, demands=None,
     if _removed:
         lines.append("> 已过滤付费推广 APP %d 个: %s" % (len(_removed), "、".join(_removed[:8])))
 
+    # ===== 今日重点：三个蓝海区各取 top，一眼看到当天最值得做的机会 =====
+    lines.append("## 🔥 今日重点\n")
+    has_highlight = False
+    # 蓝海假设（最可能出真蓝海）
+    if hypo_blue:
+        top = hypo_blue[0]
+        lines.append("- **[蓝海假设] %s**" % top.get("need", "")[:50])
+        if top.get("audience"):
+            lines.append("  - 人群: %s | %s" % (top["audience"], "AI已核对无真正同类"))
+        has_highlight = True
+    # 需求驱动蓝海
+    if blue_gaps:
+        top = blue_gaps[0]
+        lines.append("- **[需求驱动] %s**" % top.get("need", "")[:50])
+        has_highlight = True
+    # 供给驱动蓝海
+    if supply_blue:
+        top = supply_blue[0]
+        lines.append("- **[供给驱动] %s**（★%s）" % (top.get("name", "")[:40], top.get("stars", 0)))
+        has_highlight = True
+    if not has_highlight:
+        lines.append("（今日三个蓝海区均无候选，详见下方完整分析）")
+    lines.append("")
+    lines.append("---\n")
+
     # ===== 一、蓝海机会（最高优先）=====
     blue_gaps = blue_gaps or []
     lines.append("## 一、🟢 蓝海机会（供给缺口 + 真实需求）\n")
