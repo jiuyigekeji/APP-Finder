@@ -187,21 +187,16 @@ def _rule_extract_demands(posts):
     return out[:10]
 
 
-def judge_blue_ocean(demand, store_check):
+def judge_blue_ocean(demand, store_check, force_ai=False):
     """二次判断：硬阈值前置 + AI 精判。
 
-    收紧逻辑：
-    1) 硬阈值：全平台同类数 total_similar > LOW_SUPPLY_THRESHOLD 且各商店样本都
-       与需求相关 -> 直接判非蓝海（红海，不浪费 AI 调用）。
-    2) 同类数 <= 阈值 -> 交给 AI 精判（样本可能不相关，需 AI 区分）。
-    3) 同类数 > 阈值但样本明显不相关（名字与需求关键词无字符交集）-> 仍交 AI 精判，
-       但在 prompt 里强调「名义同类多但可能无关」。
+    force_ai=True 时跳过硬阈值前置（用于蓝海假设：商店模糊匹配常查到一堆无关APP，
+    不能因「同类多+名字字符重合」就判红海，必须让 AI 看分类逐一判断）。
     返回 (is_blue_ocean, reason)。
     """
     threshold = config.LOW_SUPPLY_THRESHOLD
     total = store_check.get("total_similar", 0)
     need = demand.get("need", "")
-    # 兼容多来源：search_queries(蓝海挖掘列表) / search_query(旧) / store_query(假设) / need
     sqs = demand.get("search_queries") or []
     if isinstance(sqs, list) and sqs:
         en_sq = sqs[len(sqs) // 2]
@@ -209,59 +204,55 @@ def judge_blue_ocean(demand, store_check):
         en_sq = (demand.get("store_query") or demand.get("search_query")
                  or demand.get("search_verify_word") or demand.get("need", ""))
 
-    # 收集各商店的样本 APP 名
+    # 收集各商店样本（含分类，帮 AI 判断相关性）
     existing = []
     all_names = []
     for sname, st in store_check.get("stores", {}).items():
         for it in st.get("samples", [])[:3]:
             if it.get("name"):
-                existing.append("%s: %s" % (sname, it["name"]))
+                genre = it.get("genre") or ""
+                extra = (" [%s]" % genre) if genre else ""
+                existing.append("%s: %s%s" % (sname, it["name"], extra))
                 all_names.append(it["name"])
-    existing_str = "\n".join(existing[:10]) if existing else "（无）"
+    existing_str = "\n".join(existing[:12]) if existing else "（无）"
 
-    # ---- 硬阈值前置：同类明显过多时，先看样本相关性 ----
-    if total > threshold and all_names:
-        # 判断样本是否与需求相关（名字与需求/搜索词有字符交集）
+    # ---- 硬阈值前置（force_ai 时跳过）----
+    if not force_ai and total > threshold and all_names:
         ref_chars = set((need + en_sq).lower())
         relevant = 0
         for nm in all_names:
-            nm_chars = set(nm.lower())
-            if len(ref_chars & nm_chars) >= 2:  # 至少 2 个字符重合视为相关
+            if len(ref_chars & set(nm.lower())) >= 2:
                 relevant += 1
-        # 多数样本相关且同类远超阈值 -> 红海，直接判否
         if relevant >= max(2, len(all_names) // 2) and total > threshold * 2:
-            reason = "全平台同类 %d 个（远超阈值 %d），且多数现有 APP 与需求相关，属红海" % (total, threshold)
-            return False, reason
+            return False, "全平台同类 %d 个（远超阈值 %d），且多数现有 APP 与需求相关，属红海" % (total, threshold)
 
     if not (config.ENABLE_AI_ANALYSIS and config.AI_API_KEY):
-        # 无 AI 时：纯靠硬阈值，同类 <= 阈值才算蓝海
         return total <= threshold, ("同类 %d <= 阈值 %d" % (total, threshold) if total <= threshold else "同类偏多")
 
-    # ---- AI 精判 ----
-    supply_hint = (
-        "全平台同类 APP 数: %d（蓝海判定阈值: <= %d 视为供给不足）。" % (total, threshold)
-    )
-    if total > threshold * 2:
-        supply_hint += "当前同类数远超阈值，除非现有 APP 都与该细分需求不相关，否则应判为红海。"
-    elif total > threshold:
-        supply_hint += "当前同类数略超阈值，需仔细判断现有 APP 是否真正满足该细分场景。"
-    else:
-        supply_hint += "当前同类数较低，重点判断现有 APP 是否已覆盖该细分需求。"
+    # ---- AI 精判：逐一判断现有 APP 是否真正实现该功能 ----
+    supply_hint = "全平台名义同类 APP 数: %d。" % total
+    if force_ai:
+        supply_hint += "注意：商店搜索是模糊匹配，这 %d 个里很多可能只是标题含相关字、实际功能完全不同（如查「骑手防撞单」可能匹配到「医院挂号」「提醒事项」）。请逐一判断每个 APP 是否真正实现了下述具体功能。" % total
+    elif total > threshold * 2:
+        supply_hint += "当前同类数远超阈值，除非现有 APP 都与该细分需求不相关，否则判红海。"
 
     prompt = (
         "需求: %s\n"
         "目标人群: %s\n"
-        "为何现有方案不够: %s\n\n"
+        "为何现有方案不够: %s\n"
+        "商店查重词: %s\n\n"
         "%s\n\n"
-        "应用商店搜索该需求后返回的现有 APP:\n%s\n\n"
-        "请判断: 这些现有 APP 是否真正满足上述细分需求（注意：搜索词可能匹配到不相关的付费推广 APP）？\n"
-        "判定原则：同类数远超阈值时，除非能明确指出现有 APP 都不满足该细分场景，否则判 is_blue_ocean=false。\n"
-        "输出 JSON: {\"is_blue_ocean\": true/false, \"reason\": \"为何现有APP不满足/已满足\"}"
-    ) % (need, demand.get("audience", ""), demand.get("why_gap", ""), supply_hint, existing_str)
+        "商店搜索返回的现有 APP（含分类）:\n%s\n\n"
+        "请逐一判断：这些 APP 里，是否有任何一个真正实现了上述具体功能（不是名字沾边，而是核心功能匹配）？\n"
+        "判定原则：\n"
+        "- 只要有一个 APP 真正实现了该功能 -> is_blue_ocean=false（已有满足方案）\n"
+        "- 全部都不实现（只是模糊匹配/付费推广/同类但功能不同）-> is_blue_ocean=true（真蓝海）\n"
+        "输出 JSON: {\"is_blue_ocean\": true/false, \"reason\": \"逐个判断结论：哪些APP不相关，是否有APP真正满足\"}"
+    ) % (need, demand.get("audience", ""), demand.get("why_gap", "") or demand.get("pain", ""), en_sq, supply_hint, existing_str)
     body = json.dumps({
         "model": config.AI_MODEL,
         "messages": [
-            {"role": "system", "content": "你是产品经理，严格判断细分需求是否被现有APP满足，只输出JSON。"},
+            {"role": "system", "content": "你是产品经理，逐一判断现有APP是否真正实现某具体功能，只输出JSON。"},
             {"role": "user", "content": prompt},
         ],
         "temperature": 0.2,
@@ -279,9 +270,7 @@ def judge_blue_ocean(demand, store_check):
         return bool(result.get("is_blue_ocean")), result.get("reason", "")
     except Exception as e:
         print("[blueocean] 二次判断失败: %s" % e)
-        # AI 失败时回退到硬阈值判定
         return total <= threshold, ("AI 失败，回退硬阈值：同类 %d" % total)
-
 
 def mine():
     # 合并两个来源：HN（按模板搜）+ Reddit（需求社区整帖）

@@ -148,7 +148,11 @@ def generate(date_str, translated_grouped, repos, ai_results=None, demands=None,
             lines.append("**蓝海依据**")
             lines.append("- 人群小众(巨头不做)但痛点具体，会付费")
             lines.append("- 百度联想词证明真有人在找解决方案")
-            lines.append("- 商店同类少 = 移动端供给不足")
+            sc2 = h.get("store_check") or {}
+            if sc2.get("total_similar", 0) > config.LOW_SUPPLY_THRESHOLD:
+                lines.append("- 名义同类多但经 AI 逐一核对，现有 APP 均未真正实现该细分功能（多为模糊匹配/付费推广）")
+            else:
+                lines.append("- 商店同类少 = 移动端供给不足")
             lines.append("")
             lines.append("---\n")
     else:

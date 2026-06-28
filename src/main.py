@@ -108,19 +108,17 @@ def run():
                 sc = app_store_checker.check_dual(en_q, zh_q)
                 hd["store_check"] = sc
                 total = sc.get("total_similar", 99)
-                print("[main] 假设查重 '%s' -> 同类 %d 个" % (zh_q[:20], total))
-                # 供给不足 + AI 二次判断（区分名义同类多但都不相关 vs 真红海）
-                if total <= config.LOW_SUPPLY_THRESHOLD * 3:
+                print("[main] 假设查重 '%s' -> 名义同类 %d 个" % (zh_q[:20], total))
+                # hypo 痛点都是细分场景，商店模糊匹配必然多，必须 AI 逐一判断
+                # force_ai=True 跳过硬阈值前置，让 AI 看分类逐一判断现有APP是否真实现该功能
+                is_bo, reason = blue_ocean_miner.judge_blue_ocean(hd, sc, force_ai=True)
+                if is_bo:
                     hd["is_blue_ocean"] = True
+                    hd["judge_reason"] = reason
                     hypo_blue.append(hd)
+                    print("[main] 假设 '%s' 同类%d但AI判定蓝海" % (zh_q[:16], total))
                 else:
-                    # 同类多时，让 AI 看现有APP是否真相关；不相关仍算蓝海
-                    is_bo, reason = blue_ocean_miner.judge_blue_ocean(hd, sc)
-                    if is_bo:
-                        hd["is_blue_ocean"] = True
-                        hd["judge_reason"] = reason
-                        hypo_blue.append(hd)
-                        print("[main] 假设 '%s' 同类%d但AI判定蓝海: %s" % (zh_q[:16], total, reason[:40]))
+                    print("[main] 假设 '%s' AI判定红海: %s" % (zh_q[:16], reason[:50]))
             except Exception as e:
                 print("[main] 假设查重失败: %s" % e)
     except Exception as e:
