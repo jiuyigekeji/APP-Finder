@@ -165,32 +165,42 @@ def mine(max_audiences=8):
     random.shuffle(audiences)
     audiences = audiences[:max_audiences]
 
+    # 并行 AI 假设推理（每个群体一次 AI 调用，串行需 3-5 分钟，并行压到 1 分钟内）
+    from concurrent.futures import ThreadPoolExecutor
+
+    def _hypo_one(a):
+        return a, _ai_hypothesize(a["audience"], a["hints"])
+
     all_hypotheses = []
-    for a in audiences:
-        hyps = _ai_hypothesize(a["audience"], a["hints"])
-        for h in hyps:
-            h["audience"] = a["audience"]
-            all_hypotheses.append(h)
-        print("[hypo] %s -> %d 个假设" % (a["audience"], len(hyps)))
-        time.sleep(0.5)
+    with ThreadPoolExecutor(max_workers=4) as ex:
+        for a, hyps in ex.map(_hypo_one, audiences):
+            for h in hyps:
+                h["audience"] = a["audience"]
+                all_hypotheses.append(h)
+            print("[hypo] %s -> %d 个假设" % (a["audience"], len(hyps)))
 
     print("[hypo] 共 %d 个假设，开始需求验证 ..." % len(all_hypotheses))
 
-    # 需求验证：百度联想词
-    verified = []
-    for h in all_hypotheses:
+    # 需求验证：百度联想词（并行）
+    def _verify_one(h):
         vw = h.get("search_verify_word", "")
         if not vw:
-            continue
+            return h, False, 0, []
         is_real, related_n, samples = verify_demand(vw)
-        h["demand_verified"] = is_real
-        h["related_searches"] = samples
-        h["related_count"] = related_n
-        if is_real:
-            verified.append(h)
-            print("[hypo] 需求验证通过: %s (相关搜索 %d)" % (vw, related_n))
-        else:
-            print("[hypo] 需求验证未通过: %s" % vw)
+        return h, is_real, related_n, samples
+
+    verified = []
+    with ThreadPoolExecutor(max_workers=4) as ex:
+        for h, is_real, related_n, samples in ex.map(_verify_one, all_hypotheses):
+            h["demand_verified"] = is_real
+            h["related_searches"] = samples
+            h["related_count"] = related_n
+            vw = h.get("search_verify_word", "")
+            if is_real:
+                verified.append(h)
+                print("[hypo] 需求验证通过: %s (相关搜索 %d)" % (vw, related_n))
+            else:
+                print("[hypo] 需求验证未通过: %s" % vw)
 
     print("[hypo] 需求验证通过 %d / %d" % (len(verified), len(all_hypotheses)))
     # 供给验证(商店查重)由 main 调用 app_store_checker 完成，这里只返回需求验证通过的
