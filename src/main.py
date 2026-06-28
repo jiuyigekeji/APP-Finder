@@ -78,16 +78,24 @@ def run():
         non_app = [r for r in rising if github_searcher.is_non_app_form(r)]
         print("[main] 供给驱动：rising %d 个，非APP形态 %d 个" % (len(rising), len(non_app)))
         for r in non_app[:6]:
-            # 用项目名+描述关键词查商店同类
+            # 用项目描述派生的英文词查商店，再用 AI 逐一判断（和 hypo 一致，跳过硬阈值）
             en_q = app_store_checker._build_query(r)
             zh_q = keyword_translator.translate(en_q) or en_q
             try:
                 sc = app_store_checker.check_dual(en_q, zh_q)
                 r["store_check"] = sc
-                print("[main] 供给查重 '%s' -> 同类 %d 个" % (r["name"][:30], sc.get("total_similar", 0)))
-                # 同类少 = 蓝海候选（star 验证需求真实，商店同类少 = 供给不足）
-                if sc.get("total_similar", 99) <= config.LOW_SUPPLY_THRESHOLD * 3:  # 放宽到3倍阈值
+                total = sc.get("total_similar", 99)
+                print("[main] 供给查重 '%s' -> 名义同类 %d 个" % (r["name"][:30], total))
+                # star 已验证需求真实，再用 AI 判断商店是否真有同类（force_ai 跳过硬阈值）
+                r["need"] = r.get("desc", "")[:80]
+                r["audience"] = "GitHub 项目用户"
+                r["why_gap"] = "该项目为 %s 形态，普通用户无法直接使用" % r.get("language", "代码")
+                is_bo, reason = blue_ocean_miner.judge_blue_ocean(r, sc, force_ai=True)
+                if is_bo:
+                    r["is_blue_ocean"] = True
+                    r["judge_reason"] = reason
                     supply_blue.append(r)
+                    print("[main] 供给 '%s' AI判定蓝海" % r["name"][:24])
             except Exception as e:
                 print("[main] 供给查重失败: %s" % e)
     except Exception as e:
