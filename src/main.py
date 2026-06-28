@@ -101,18 +101,26 @@ def run():
         hypo_demands = blue_ocean_hypothesizer.mine(max_audiences=8)
         print("[main] 蓝海假设：需求验证通过 %d 条，开始供给验证 ..." % len(hypo_demands))
         for hd in hypo_demands[:10]:
-            # 供给验证：商店查重（用验证词的中文 + 翻译英文）
-            zh_q = hd.get("search_verify_word", "") or hd.get("need", "")[:20]
+            # 供给验证：用 store_query(窄词,含场景) 查商店，避免宽词查到一堆不相关APP
+            zh_q = hd.get("store_query", "") or hd.get("search_verify_word", "") or hd.get("need", "")[:20]
             en_q = keyword_translator.translate(zh_q) or zh_q
             try:
                 sc = app_store_checker.check_dual(en_q, zh_q)
                 hd["store_check"] = sc
                 total = sc.get("total_similar", 99)
                 print("[main] 假设查重 '%s' -> 同类 %d 个" % (zh_q[:20], total))
-                # 供给不足(同类少) = 蓝海
+                # 供给不足 + AI 二次判断（区分名义同类多但都不相关 vs 真红海）
                 if total <= config.LOW_SUPPLY_THRESHOLD * 3:
                     hd["is_blue_ocean"] = True
                     hypo_blue.append(hd)
+                else:
+                    # 同类多时，让 AI 看现有APP是否真相关；不相关仍算蓝海
+                    is_bo, reason = blue_ocean_miner.judge_blue_ocean(hd, sc)
+                    if is_bo:
+                        hd["is_blue_ocean"] = True
+                        hd["judge_reason"] = reason
+                        hypo_blue.append(hd)
+                        print("[main] 假设 '%s' 同类%d但AI判定蓝海: %s" % (zh_q[:16], total, reason[:40]))
             except Exception as e:
                 print("[main] 假设查重失败: %s" % e)
     except Exception as e:

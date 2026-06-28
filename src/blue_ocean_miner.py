@@ -201,12 +201,13 @@ def judge_blue_ocean(demand, store_check):
     threshold = config.LOW_SUPPLY_THRESHOLD
     total = store_check.get("total_similar", 0)
     need = demand.get("need", "")
-    # 兼容：新格式 search_queries(列表) 取中间词，旧格式 search_query(单字符串)
+    # 兼容多来源：search_queries(蓝海挖掘列表) / search_query(旧) / store_query(假设) / need
     sqs = demand.get("search_queries") or []
     if isinstance(sqs, list) and sqs:
-        en_sq = sqs[len(sqs) // 2]  # 中间词（中等宽窄，最接近真实供给）
+        en_sq = sqs[len(sqs) // 2]
     else:
-        en_sq = demand.get("search_query", "")
+        en_sq = (demand.get("store_query") or demand.get("search_query")
+                 or demand.get("search_verify_word") or demand.get("need", ""))
 
     # 收集各商店的样本 APP 名
     existing = []

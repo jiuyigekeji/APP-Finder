@@ -133,12 +133,16 @@ def generate(date_str, translated_grouped, repos, ai_results=None, demands=None,
                 lines.append("- 💡 痛点: %s" % h["pain"])
             if h.get("why_no_tool"):
                 lines.append("- ❓ 为何现有工具没解决: %s" % h["why_no_tool"])
+            if h.get("store_query") and h.get("store_query") != h.get("search_verify_word"):
+                lines.append("- 🔍 商店查重词(窄): %s" % h["store_query"])
             # 需求验证证据
             if h.get("related_searches"):
                 lines.append("- ✅ 需求验证(百度联想词): %s" % "、".join(h["related_searches"][:5]))
             sc = h.get("store_check")
             if sc:
                 lines.append("- 🏪 供给验证: 全平台同类 %d 个 | %s" % (sc.get("total_similar", 0), sc.get("competition", "")))
+            if h.get("judge_reason"):
+                lines.append("- ✅ AI 判断: %s" % h["judge_reason"])
                 lines.append("- 分类: %s | 搜索词: %s" % (sc.get("category", ""), _sc_query_display(sc)))
             lines.append("")
             lines.append("**蓝海依据**")
