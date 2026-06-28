@@ -42,5 +42,14 @@ jobs:
             echo "no new report to commit"
           else
             git commit -m "chore: daily app-finder report $(date -u +%Y-%m-%d)"
-            git push
+            # 并发时远端可能已有新提交，pull --rebase 后重试 push（最多3次）
+            for i in 1 2 3; do
+              git pull --rebase origin master || true
+              if git push origin master; then
+                echo "push ok on attempt $i"
+                break
+              fi
+              echo "push attempt $i failed, retrying..."
+              sleep 5
+            done
           fi
