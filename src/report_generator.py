@@ -69,20 +69,6 @@ def _difficulty_lines(item):
 
 
 
-    """生成实现/推广难点展示行。item 可含 difficulty(dict) 或 ai_results 的 impl_/promo_ 字段。"""
-    out = []
-    diff = item.get("difficulty") or {}
-    impl = diff.get("impl_difficulty") or item.get("impl_difficulty")
-    promo = diff.get("promo_difficulty") or item.get("promo_difficulty")
-    if impl or promo:
-        out.append("**实现/推广难点**")
-        if impl:
-            out.append("- 实现难点: %s" % impl)
-        if promo:
-            out.append("- 推广难点: %s" % promo)
-        out.append("")
-    return out
-
 
 def _supply_gap_flag(store_check):
     """供给缺口标记：商店同类少 = 洼地机会。"""
@@ -94,16 +80,18 @@ def _supply_gap_flag(store_check):
     return ""
 
 
-def generate(date_str, translated_grouped, repos, ai_results=None, demands=None, blue_gaps=None, supply_blue=None, hypo_blue=None):
+def generate(date_str, translated_grouped, repos, ai_results=None, demands=None, blue_gaps=None, supply_blue=None, hypo_blue=None, review_blue=None, issues_blue=None):
     ai_results = ai_results or {}
     demands = demands or []
     supply_blue = supply_blue or []
     hypo_blue = hypo_blue or []
+    review_blue = review_blue or []
+    issues_blue = issues_blue or []
     tz = timezone(timedelta(hours=8))
     lines = []
     lines.append("# APP 机会发现日报 - %s\n" % date_str)
     lines.append("> 自动生成时间: %s" % datetime.now(tz).strftime("%Y-%m-%d %H:%M CST"))
-    lines.append("> 需求信号: Hacker News(蓝海) / 百度联想词(持续搜索) / 热搜(趋势参考)")
+    lines.append("> 需求信号: HN/Reddit + 差评挖掘 + GitHub Issues + 蓝海假设 + 百度联想词")
     lines.append("> 供给信号: Apple/Google Play/华为/小米/vivo 商店查重\n")
     # 展示本次过滤的付费推广 APP（来自 app_store_checker.finalize_promotion_filter）
     try:
@@ -133,6 +121,14 @@ def generate(date_str, translated_grouped, repos, ai_results=None, demands=None,
     if supply_blue:
         top = supply_blue[0]
         lines.append("- **[供给驱动] %s**（★%s）" % (top.get("name", "")[:40], top.get("stars", 0)))
+        has_highlight = True
+    if review_blue:
+        top = review_blue[0]
+        lines.append("- **[差评驱动] %s**" % top.get("need", "")[:50])
+        has_highlight = True
+    if issues_blue:
+        top = issues_blue[0]
+        lines.append("- **[Issue驱动] %s**" % top.get("need", "")[:50])
         has_highlight = True
     if not has_highlight:
         lines.append("（今日三个蓝海区均无候选，详见下方完整分析）")
@@ -231,6 +227,72 @@ def generate(date_str, translated_grouped, repos, ai_results=None, demands=None,
             lines.append("---\n")
     else:
         lines.append("（今日未发现双重验证通过的蓝海假设。可增大人群种子数或调宽供给阈值。）\n")
+        lines.append("---\n")
+
+    # ===== 一D、差评驱动蓝海（热门 APP 差评里「想要但没满足」的功能）=====
+    lines.append("## 一D、🟢 差评驱动蓝海（热门APP差评挖掘）\n")
+    lines.append("> 抓取热门 APP 的 1-2 星差评，AI 聚类「用户反复想要、但现有 APP 没做好」的功能。\n")
+    lines.append("> 这类用户已证明会付费/会下载，只是现有 APP 没满足——是离真实蓝海最近的信号。\n")
+    if review_blue:
+        for i, d in enumerate(review_blue, 1):
+            gap = _supply_gap_flag(d.get("store_check"))
+            lines.append("### 差评蓝海 %d. %s%s\n" % (i, d.get("need", "")[:80], gap))
+            if d.get("audience"):
+                lines.append("- 🎯 目标人群: %s" % d["audience"])
+            if d.get("pain"):
+                lines.append("- 💔 痛点: %s" % d["pain"])
+            if d.get("why_gap"):
+                lines.append("- ❓ 为何现有APP没解决: %s" % d["why_gap"])
+            sc = d.get("store_check")
+            if sc:
+                lines.append("- 🛒 供给验证: 全平台同类 %d 个 | %s" % (sc.get("total_similar", 0), sc.get("competition", "")))
+                lines.append("- 分类: %s | 搜索词: %s" % (sc.get("category", ""), _sc_query_display(sc)))
+            if d.get("judge_reason"):
+                lines.append("- ✅ AI 判断: %s" % d["judge_reason"])
+            if d.get("source_post"):
+                lines.append("- 来源: %s" % d["source_post"])
+            lines.append("")
+            lines.append("**蓝海依据**")
+            lines.append("- 用户已下载使用热门 APP 却打差评 = 痛点真实、有付费意愿")
+            lines.append("- 多条差评指向同一未满足功能 = 需求共识强")
+            lines.append("- 现有 APP 都没做好该细分功能 = 供给缺口")
+            lines.extend(_difficulty_lines(d))
+            lines.append("---\n")
+    else:
+        lines.append("（今日差评挖掘未发现通过验证的蓝海需求。热门 APP 差评多指向 bug/性能而非功能缺口。）\n")
+        lines.append("---\n")
+
+    # ===== 一E、GitHub Issues 驱动蓝海（feature request 高频诉求）=====
+    lines.append("## 一E、🟢 Issue驱动蓝海（GitHub feature request 挖掘）\n")
+    lines.append("> 抓取开源项目的 feature request issue，按评论数排序，AI 聚类高频诉求。\n")
+    lines.append("> 评论多 = 需求共识强；项目方没做/没做好 = 供给缺口；适合封装成对普通用户友好的 APP。\n")
+    if issues_blue:
+        for i, d in enumerate(issues_blue, 1):
+            gap = _supply_gap_flag(d.get("store_check"))
+            lines.append("### Issue蓝海 %d. %s%s\n" % (i, d.get("need", "")[:80], gap))
+            if d.get("audience"):
+                lines.append("- 🎯 目标人群: %s" % d["audience"])
+            if d.get("pain"):
+                lines.append("- 💔 痛点: %s" % d["pain"])
+            if d.get("why_gap"):
+                lines.append("- ❓ 为何现有工具没解决: %s" % d["why_gap"])
+            sc = d.get("store_check")
+            if sc:
+                lines.append("- 🛒 供给验证: 全平台同类 %d 个 | %s" % (sc.get("total_similar", 0), sc.get("competition", "")))
+                lines.append("- 分类: %s | 搜索词: %s" % (sc.get("category", ""), _sc_query_display(sc)))
+            if d.get("judge_reason"):
+                lines.append("- ✅ AI 判断: %s" % d["judge_reason"])
+            if d.get("source_post"):
+                lines.append("- 来源: %s" % d["source_post"])
+            lines.append("")
+            lines.append("**蓝海依据**")
+            lines.append("- 用户在开源项目主动提 feature request = 真实需求")
+            lines.append("- 评论多 = 需求共识强，非个例")
+            lines.append("- 开源工具多为开发者向，普通用户难用 = 移动端供给缺口")
+            lines.extend(_difficulty_lines(d))
+            lines.append("---\n")
+    else:
+        lines.append("（今日 Issue 挖掘未发现通过验证的蓝海需求。可调整搜索领域或增大抓取量。）\n")
         lines.append("---\n")
 
     # ===== 二、用户真实需求 =====
@@ -364,7 +426,8 @@ def generate(date_str, translated_grouped, repos, ai_results=None, demands=None,
     lines.append("- 需求信号来自百度联想词（用户持续搜索的解决方案），区别于热搜突发事件。")
     lines.append("- 🟢供给缺口 = 全平台同类 APP ≤ %d 个，是值得优先验证的洼地。" % config.LOW_SUPPLY_THRESHOLD)
     lines.append("- 候选来自 GitHub 近期活跃且有 star 验证的项目，已做商店查重评估竞争。")
-    lines.append("- 启用 AI（`ENABLE_AI_ANALYSIS`）可对仓库源码做深度痛点分析。\n")
+    lines.append("- 启用 AI（`ENABLE_AI_ANALYSIS`）可对仓库源码做深度痛点分析。")
+    lines.append("- 蓝海来源：需求驱动(HN/Reddit) + 供给驱动(GitHub高star) + 蓝海假设(小众人群) + 差评挖掘(热门APP差评) + Issue挖掘(feature request)。\n")
     return "\n".join(lines)
 
 

@@ -22,6 +22,8 @@ import github_searcher
 import repo_analyzer
 import ai_analyzer
 import blue_ocean_hypothesizer
+import review_miner
+import github_issues_miner
 import report_generator
 
 BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -134,6 +136,71 @@ def run():
         print("[main] 蓝海假设失败: %s" % e)
     print("[main] 蓝海假设验证通过 %d 条" % len(hypo_blue))
 
+    # 通用蓝海需求验证：查重(中位同类数) + AI 二次判断。复用于差评/issue 来源。
+    def _verify_blue_demand(d):
+        """对一条蓝海需求做商店查重 + AI 判定。返回 (d, is_bo, reason, total)。"""
+        queries = d.get("search_queries") or [d.get("store_query") or d.get("search_query") or d.get("need", "")]
+        queries = [q for q in queries if q]
+        if not queries:
+            return d, False, "无查重词", 99
+        checks = []
+        for en_sq in queries[:3]:
+            zh_sq = keyword_translator.translate(en_sq) or en_sq
+            try:
+                sc = app_store_checker.check_dual(en_sq, zh_sq)
+                checks.append(sc)
+            except Exception as e:
+                print("[main] 查重失败: %s" % e)
+        if not checks:
+            return d, False, "查重全失败", 99
+        totals = sorted(sc.get("total_similar", 0) for sc in checks)
+        mid = totals[len(totals) // 2]
+        d["store_check"] = checks[0]
+        d["store_check"]["total_similar"] = mid
+        d["store_check"]["_all_queries"] = [q for q in queries[:3]]
+        is_bo, reason = blue_ocean_miner.judge_blue_ocean(d, d["store_check"], force_ai=True)
+        return d, is_bo, reason, mid
+
+    # 0D. 差评驱动蓝海：热门 APP 差评里「想要但没满足」的功能（用户已证明会付费/下载）
+    review_blue = []
+    try:
+        review_demands = review_miner.mine(max_apps=6)
+        print("[main] 差评挖掘 %d 条需求，开始查重验证 ..." % len(review_demands))
+        from concurrent.futures import ThreadPoolExecutor
+        with ThreadPoolExecutor(max_workers=4) as ex:
+            for d, is_bo, reason, total in ex.map(_verify_blue_demand, review_demands[:8]):
+                print("[main] 差评查重 %s -> 同类 %d 个" % ((d.get("store_query") or "")[:20], total))
+                if is_bo:
+                    d["is_blue_ocean"] = True
+                    d["judge_reason"] = reason
+                    review_blue.append(d)
+                    print("[main] 差评 %s AI判定蓝海" % (d.get("need", "")[:20]))
+                else:
+                    print("[main] 差评 %s AI判定红海" % (d.get("need", "")[:20]))
+    except Exception as e:
+        print("[main] 差评驱动蓝海失败: %s" % e)
+    print("[main] 差评驱动蓝海 %d 条" % len(review_blue))
+
+    # 0E. GitHub Issues 驱动蓝海：feature request 高频诉求（需求被 issue 验证但未满足）
+    issues_blue = []
+    try:
+        issues_demands = github_issues_miner.mine(max_topics=6)
+        print("[main] Issue 挖掘 %d 条需求，开始查重验证 ..." % len(issues_demands))
+        from concurrent.futures import ThreadPoolExecutor
+        with ThreadPoolExecutor(max_workers=4) as ex:
+            for d, is_bo, reason, total in ex.map(_verify_blue_demand, issues_demands[:8]):
+                print("[main] Issue 查重 %s -> 同类 %d 个" % ((d.get("store_query") or "")[:20], total))
+                if is_bo:
+                    d["is_blue_ocean"] = True
+                    d["judge_reason"] = reason
+                    issues_blue.append(d)
+                    print("[main] Issue %s AI判定蓝海" % (d.get("need", "")[:20]))
+                else:
+                    print("[main] Issue %s AI判定红海" % (d.get("need", "")[:20]))
+    except Exception as e:
+        print("[main] Issue 驱动蓝海失败: %s" % e)
+    print("[main] Issue 驱动蓝海 %d 条" % len(issues_blue))
+
     # 1. 需求挖掘（主）：百度联想词扩展长尾需求
     demands = demand_miner.mine()  # [(需求词, 来源种子词)]
 
@@ -173,6 +240,8 @@ def run():
 
     # 4.5 跨查询推广 APP 回扫
     all_checks = ([bd.get("store_check") for bd in blue_gaps if bd.get("store_check")]
+                  + [d.get("store_check") for d in review_blue if d.get("store_check")]
+                  + [d.get("store_check") for d in issues_blue if d.get("store_check")]
                   + [r.get("store_check") for r in supply_blue if r.get("store_check")]
                   + [r.get("store_check") for r in analyzed if r.get("store_check")])
     removed_promos = app_store_checker.finalize_promotion_filter(all_checks)
@@ -182,7 +251,7 @@ def run():
     # 4.6 蓝海候选困难分析：对每个蓝海候选(假设/供给/需求驱动)分析实现+推广难点
     if config.ENABLE_AI_ANALYSIS:
         from concurrent.futures import ThreadPoolExecutor
-        all_blue = blue_gaps + supply_blue + hypo_blue
+        all_blue = blue_gaps + supply_blue + hypo_blue + review_blue + issues_blue
         print("[main] 对 %d 个蓝海候选做困难分析 ..." % len(all_blue))
 
         def _diff_one(item):
@@ -197,7 +266,7 @@ def run():
     report = report_generator.generate(
         date_str,
         {"demands": demand_translated, "hot": hot_translated},
-        analyzed, ai_results, demands=demands, blue_gaps=blue_gaps, supply_blue=supply_blue, hypo_blue=hypo_blue)
+        analyzed, ai_results, demands=demands, blue_gaps=blue_gaps, supply_blue=supply_blue, hypo_blue=hypo_blue, review_blue=review_blue, issues_blue=issues_blue)
     os.makedirs(REPORTS_DIR, exist_ok=True)
     ts = datetime.now(tz).strftime("%Y-%m-%d-%H%M")
     out_path = os.path.join(REPORTS_DIR, ts + ".md")
